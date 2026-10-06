@@ -5,7 +5,7 @@
 - Código: `/opt/torresoft/apps/hub`, repositório `torresoftbrasil/intranet`.
 - Compose: `engenize-hub`, com PostgreSQL 18, API Java e frontend Angular.
 - Dados: `/srv/torresoft-data/hub/postgres` e `/srv/torresoft-data/hub/uploads`.
-- Backups antes de cada atualização: `/srv/torresoft-data/hub/backups`.
+- Backups criptografados antes de cada atualização: `/srv/torresoft-data/hub/backups`, com chave em `/etc/hub/backup.key`.
 - Porta do frontend: `127.0.0.1:8083`; PostgreSQL e API ficam somente na rede Docker.
 - Domínio: `hub.engenize.com.br`, terminado pelo Nginx do host com Let's Encrypt.
 
@@ -21,11 +21,14 @@ install -d -m 750 /srv/torresoft-data/hub
 install -d -o 999 -g 999 -m 700 /srv/torresoft-data/hub/postgres
 install -d -o 10001 -g 10001 -m 750 /srv/torresoft-data/hub/uploads
 install -d -m 700 /srv/torresoft-data/hub/backups
+install -d -m 700 /etc/hub
+openssl rand -hex 64 > /etc/hub/backup.key
+chmod 600 /etc/hub/backup.key
 ```
 
 Criar `/opt/torresoft/apps/hub/.env` com permissão 600. Usar `DB_NAME=hub`, `DB_USER=hub`, senha aleatória exclusiva, `ARTHUR_INITIAL_PASSWORD` e `FELIPE_INITIAL_PASSWORD` distintos com pelo menos 12 caracteres, `SESSION_COOKIE_SECURE=true`, `HUB_DATA_DIR=/srv/torresoft-data/hub` e `WEB_PORT=8083`. As senhas iniciais só são usadas para criar contas ausentes. Guardá-las em gerenciador de senhas; não imprimir em logs ou versionar.
 
-Validar `docker compose --env-file .env -f deploy/compose.yaml config`, iniciar com `up -d --build --wait` e conferir `/healthz`, `/api/csrf`, histórico Flyway e login. O primeiro start aplica as migrações versionadas no banco novo. Gerar `pg_dump -Fc`, checksum e verificar leitura com `pg_restore --list` antes de considerar o backup válido.
+Validar `docker compose --env-file .env -f deploy/compose.yaml config`, iniciar com `up -d --build --wait` e conferir `/healthz`, `/api/csrf`, histórico Flyway e login. O primeiro start aplica as migrações versionadas no banco novo. Guardar cópia externa da chave separada dos backups. O release gera `pg_dump -Fc` criptografado com AES-256-CBC/PBKDF2, checksum SHA-256 e testa a leitura com `pg_restore --list`.
 
 ## DNS, Nginx e certificado
 

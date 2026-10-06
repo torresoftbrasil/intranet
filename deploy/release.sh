@@ -10,6 +10,8 @@ set -a
 source .env
 set +a
 DATA_DIR="${HUB_DATA_DIR:-/srv/torresoft-data/hub}"
+BACKUP_KEY=/etc/hub/backup.key
+test -s "$BACKUP_KEY" || { echo 'Chave de backup ausente.' >&2; exit 1; }
 mkdir -p "$DATA_DIR/postgres" "$DATA_DIR/uploads" "$DATA_DIR/backups"
 exec 9>"$DATA_DIR/deploy.lock"
 flock -w 1800 9
@@ -27,7 +29,9 @@ restore_previous() {
   "${COMPOSE[@]}" stop web api || true
   if (( MIGRATION_ATTEMPTED == 1 )) && [[ -n "$BACKUP" && -f "$BACKUP" ]]; then
     "${COMPOSE[@]}" up -d postgres
-    if ! "${COMPOSE[@]}" exec -T postgres pg_restore --clean --if-exists --no-owner -U "$DB_USER" -d "$DB_NAME" < "$BACKUP"; then
+    if ! sha256sum --check "$BACKUP.sha256" >/dev/null ||
+       ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:"$BACKUP_KEY" -in "$BACKUP" |
+         "${COMPOSE[@]}" exec -T postgres pg_restore --clean --if-exists --no-owner -U "$DB_USER" -d "$DB_NAME"; then
       echo "Restauração do banco falhou; serviços de aplicação permanecem parados. Backup: $BACKUP" >&2
       trap - EXIT
       exit "$result"
@@ -43,11 +47,15 @@ trap restore_previous EXIT
 
 "${COMPOSE[@]}" up -d postgres
 if "${COMPOSE[@]}" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -Atqc 'SELECT 1' >/dev/null 2>&1; then
-  BACKUP="$DATA_DIR/backups/pre-${TARGET_SHA:0:12}-$(date -u +%Y%m%d%H%M%S).dump"
-  "${COMPOSE[@]}" exec -T postgres pg_dump -Fc -U "$DB_USER" "$DB_NAME" > "$BACKUP"
+  BACKUP="$DATA_DIR/backups/pre-${TARGET_SHA:0:12}-$(date -u +%Y%m%d%H%M%S).dump.enc"
+  "${COMPOSE[@]}" exec -T postgres pg_dump -Fc -U "$DB_USER" "$DB_NAME" |
+    openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -pass file:"$BACKUP_KEY" -out "$BACKUP"
   chmod 600 "$BACKUP"
   test -s "$BACKUP"
-  "${COMPOSE[@]}" exec -T postgres pg_restore --list < "$BACKUP" >/dev/null
+  sha256sum "$BACKUP" > "$BACKUP.sha256"
+  sha256sum --check "$BACKUP.sha256" >/dev/null
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:"$BACKUP_KEY" -in "$BACKUP" |
+    "${COMPOSE[@]}" exec -T postgres pg_restore --list >/dev/null
 fi
 git fetch origin main
 git cat-file -e "$TARGET_SHA^{commit}"
