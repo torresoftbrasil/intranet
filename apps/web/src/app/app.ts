@@ -9,6 +9,7 @@ import { SecurityContext } from '@angular/core';
 type Status = 'AGUARDANDO_DESENVOLVIMENTO' | 'EM_DESENVOLVIMENTO' | 'DESENVOLVIMENTO_EM_PROGRESSO' | 'EM_TESTE' | 'REABERTA';
 type Person = { id: number; login: string; nome: string };
 type Demand = { id: number; titulo: string; descricao?: string; status: Status; responsavelId: number | ''; responsavel: string; criadoEm: string; atualizadoEm: string };
+type RecentDemand = Pick<Demand, 'id' | 'titulo' | 'responsavel' | 'criadoEm'>;
 type Attachment = { id: number; nome: string; tipo: string; tamanho: number };
 type PendingImage = { id: number; file: File; previewUrl: string };
 type SavedFilter = { id: number; nome: string; texto: string | null; status: Status | null; responsavelId: number | null };
@@ -29,8 +30,9 @@ export class App {
   @ViewChild('promptInput') promptInput?: ElementRef<HTMLTextAreaElement>;
   statuses = statuses;
   me = signal<Person | null>(null);
-  page = signal<'demandas' | 'painel'>('demandas');
+  page = signal<'inicio' | 'demandas' | 'painel'>('inicio');
   demands = signal<Demand[]>([]);
+  recentDemands = signal<RecentDemand[]>([]);
   people = signal<Person[]>([]);
   filters = signal<SavedFilter[]>([]);
   attachments = signal<Attachment[]>([]);
@@ -82,7 +84,7 @@ export class App {
     this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
     this.quickSavedId = null; this.quickImageHtml = '';
     await firstValueFrom(this.http.post('/api/logout', {}));
-    this.me.set(null); this.current.set(null); this.demands.set([]);
+    this.me.set(null); this.current.set(null); this.demands.set([]); this.recentDemands.set([]);
     await firstValueFrom(this.http.get('/api/csrf'));
   }
   async refresh() {
@@ -92,7 +94,11 @@ export class App {
     ]);
     this.people.set(people); this.filters.set(filters);
     if (!this.quickResponsible) this.quickResponsible = String(this.me()?.id ?? '');
-    await this.searchDemands();
+    await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
+  }
+  async loadRecentDemands() {
+    try { this.recentDemands.set(await firstValueFrom(this.http.get<RecentDemand[]>('/api/demandas/recentes'))); }
+    catch { this.error.set('Não foi possível carregar as demandas recentes.'); }
   }
   async searchDemands() {
     this.selected.set([]);
@@ -105,7 +111,7 @@ export class App {
   }
   clearFilters() { this.search = ''; this.filterStatus = ''; this.filterPerson = ''; void this.searchDemands(); }
   statusLabel(value: string) { return statuses.find(item => item.value === value)?.label ?? value; }
-  async open(demand: Demand) {
+  async open(demand: Pick<Demand, 'id'>) {
     this.error.set('');
     try {
       this.clearPendingImages();
@@ -113,7 +119,6 @@ export class App {
       this.current.set(full); this.title = full.titulo; this.description = full.descricao ?? '';
       this.status = full.status; this.responsible = full.responsavelId ? String(full.responsavelId) : '';
       this.attachments.set(await firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${demand.id}/anexos`)));
-      this.page.set('demandas');
       setTimeout(() => { if (this.editor) this.editor.nativeElement.innerHTML = this.sanitizer.sanitize(SecurityContext.HTML, this.description) ?? ''; });
     } catch { this.error.set('Não foi possível abrir a demanda.'); }
   }
@@ -138,7 +143,7 @@ export class App {
     } else if (event.key === 'Escape') { this.paletteOpen.set(false); this.menuOpen.set(false); }
   }
 
-  navigate(page: 'demandas' | 'painel') {
+  navigate(page: 'inicio' | 'demandas' | 'painel') {
     this.page.set(page); this.closeEditor(); this.menuOpen.set(false); this.paletteOpen.set(false);
   }
 
@@ -211,7 +216,7 @@ export class App {
         this.quickImageHtml += uploads.html;
         await firstValueFrom(this.http.put<Demand>(`/api/demandas/${saved.id}`, {...body, descricao: this.promptDescription()}));
       }
-      await this.searchDemands();
+      await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
       if (uploads.failed) {
         this.error.set(`${uploads.failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
       } else {
@@ -227,15 +232,28 @@ export class App {
   }
 
   showMine() {
+    this.search = ''; this.filterStatus = '';
     this.filterPerson = String(this.me()?.id ?? '');
     this.filtersOpen.set(true); this.navigate('demandas'); void this.searchDemands();
+  }
+
+  showAll() {
+    this.search = ''; this.filterStatus = ''; this.filterPerson = '';
+    this.filtersOpen.set(false); this.navigate('demandas'); void this.searchDemands();
   }
 
   plainText(html: string | undefined) {
     return (html ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   }
-  editNew() { this.navigate('demandas'); setTimeout(() => this.promptInput?.nativeElement.focus()); }
-  async editExisting(demand: Demand) { await this.open(demand); this.editing.set(true); }
+  openedAt(value: string) {
+    const date = new Date(value);
+    const today = new Date();
+    if (date.toDateString() === today.toDateString())
+      return `Hoje, ${new Intl.DateTimeFormat('pt-BR', {hour: '2-digit', minute: '2-digit'}).format(date)}`;
+    return new Intl.DateTimeFormat('pt-BR', {day: '2-digit', month: '2-digit', year: 'numeric'}).format(date);
+  }
+  editNew() { this.navigate('inicio'); setTimeout(() => this.promptInput?.nativeElement.focus()); }
+  async editExisting(demand: Pick<Demand, 'id'>) { await this.open(demand); this.editing.set(true); }
   closeEditor() { if (this.editing()) this.clearPendingImages(); this.editing.set(false); this.current.set(null); }
 
   pasteImages(event: ClipboardEvent) {
@@ -327,7 +345,7 @@ export class App {
         this.current.set(saved);
         this.attachments.set(await firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${saved.id}/anexos`)));
       }
-      await this.searchDemands();
+      await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
       if (uploads.failed) this.error.set(`${uploads.failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
       else this.notice.set(uploads.uploaded ? 'Demanda e fotos salvas.' : 'Demanda salva.');
     } catch (e) { this.error.set(this.errorText(e)); }
@@ -347,7 +365,8 @@ export class App {
     try {
       await firstValueFrom(this.http.post('/api/demandas/lote', {ids: this.selected(), status: this.bulkStatus || null,
         alterarResponsavel: this.bulkAssign, responsavelId: this.bulkPerson ? Number(this.bulkPerson) : null}));
-      this.notice.set(`${this.selected().length} demanda(s) atualizada(s).`); this.selected.set([]); await this.searchDemands();
+      this.notice.set(`${this.selected().length} demanda(s) atualizada(s).`); this.selected.set([]);
+      await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
     } catch (e) { this.error.set(this.errorText(e)); }
   }
   async saveFilter() {

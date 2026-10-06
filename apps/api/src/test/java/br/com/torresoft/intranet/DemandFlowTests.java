@@ -38,6 +38,14 @@ class DemandFlowTests {
     var matcher = Pattern.compile("\"id\"\\s*:\\s*(\\d+)").matcher(created);
     if (!matcher.find()) throw new AssertionError("Resposta sem id: " + created);
     long id = Long.parseLong(matcher.group(1));
+    mvc.perform(post("/api/demandas").with(user("felipe")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"titulo\":\"Demanda do Felipe\"}"))
+      .andExpect(status().isCreated());
+    mvc.perform(get("/api/demandas/recentes").with(user("arthur")))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$[0].titulo").value("Corrigir portal"))
+      .andExpect(jsonPath("$[1]").doesNotExist());
     mvc.perform(post("/api/demandas/lote").with(user("felipe")).with(csrf())
       .contentType(MediaType.APPLICATION_JSON)
       .content("{\"ids\":[" + id + "],\"status\":\"EM_TESTE\",\"alterarResponsavel\":true,\"responsavelId\":2}"))

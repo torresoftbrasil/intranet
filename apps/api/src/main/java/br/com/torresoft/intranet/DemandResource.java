@@ -73,6 +73,15 @@ public class DemandResource {
     return named.queryForList(sql.toString(), params);
   }
 
+  @GetMapping("/demandas/recentes") List<Map<String,Object>> recent(Principal principal) {
+    return jdbc.queryForList("""
+      SELECT d.id, d.titulo, u.nome AS responsavel, d.criado_em AS "criadoEm"
+      FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id
+      WHERE d.criado_por_id = ?
+      ORDER BY d.criado_em DESC, d.id DESC LIMIT 10
+      """, userId(principal));
+  }
+
   @GetMapping("/demandas/{id}") Map<String,Object> one(@PathVariable long id) { return getDemand(id); }
 
   @PostMapping("/demandas") @ResponseStatus(HttpStatus.CREATED) @Transactional
