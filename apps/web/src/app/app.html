@@ -1,24 +1,22 @@
 @if (!me()) {
   <main class="login-shell">
-    <div class="ambient ambient--blue"></div><div class="ambient ambient--orange"></div>
-    <form class="login-card glow-frame" (ngSubmit)="signIn()">
-      <div class="login-inner">
-        <div class="login-brand"><span class="brand-mark">T</span><span>TORRESOFT <small>INTRANET</small></span></div>
-        <p class="eyebrow">SEU ESPAÇO DE TRABALHO</p>
-        <h1>Boas ideias começam aqui.</h1>
-        <p class="muted">Entre para transformar demandas em trabalho concluído.</p>
-        <div class="login-fields"><label>Usuário<input name="login" [(ngModel)]="login" autocomplete="username" required></label>
-        <label>Senha<input name="password" [(ngModel)]="password" type="password" autocomplete="current-password" required></label></div>
-        @if (error()) { <p class="message error">{{ error() }}</p> }
-        <button class="primary full" [disabled]="busy()">Entrar <span aria-hidden="true">↗</span></button>
+    <form class="login-form" (ngSubmit)="signIn()">
+      <h1>Hub.</h1>
+      <div class="login-fields">
+        <input name="login" [(ngModel)]="login" aria-label="Usuário" placeholder="Usuário" autocomplete="username" required>
+        <div class="login-password-row">
+          <input name="password" [(ngModel)]="password" type="password" aria-label="Senha" placeholder="Senha" autocomplete="current-password" required>
+          <button type="submit" aria-label="Entrar" [disabled]="busy()"><span aria-hidden="true">→</span></button>
+        </div>
       </div>
+      @if (error()) { <p class="login-error" role="alert">{{ error() }}</p> }
     </form>
   </main>
 } @else {
   <div class="app-shell">
     <div class="ambient ambient--blue"></div><div class="ambient ambient--violet"></div><div class="ambient ambient--orange"></div>
     <header class="topbar">
-      <button class="wordmark" (click)="navigate('demandas')" aria-label="Ir para demandas"><span class="brand-mark small">T</span><span>TORRESOFT <small>INTRANET</small></span></button>
+      <button class="wordmark" (click)="navigate('demandas')" aria-label="Ir para demandas">Hub.</button>
       <div class="top-actions">
         <button class="shortcut" (click)="paletteOpen.set(true); menuOpen.set(false)"><span aria-hidden="true">⌕</span> Buscar ou criar <kbd>Ctrl K</kbd></button>
         <div class="profile-wrap"><button class="profile-trigger" (click)="menuOpen.update(open => !open)" [attr.aria-expanded]="menuOpen()" aria-label="Abrir menu da conta"><span class="avatar">{{ me()!.nome.slice(0, 1) }}</span><span class="profile-name">{{ me()!.nome }}</span><span class="chevron">⌄</span></button>

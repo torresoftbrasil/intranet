@@ -68,7 +68,11 @@ export class App {
       await firstValueFrom(this.http.get('/api/csrf'));
       this.password = ''; this.me.set(await firstValueFrom(this.http.get<Person>('/api/me')));
       await this.refresh();
-    } catch { this.error.set('Usuário ou senha inválidos.'); }
+    } catch (e) {
+      this.error.set(e instanceof HttpErrorResponse && e.status === 401
+        ? 'Usuário ou senha inválidos.'
+        : 'Não foi possível acessar o servidor. Tente novamente em instantes.');
+    }
     finally { this.busy.set(false); }
   }
   async signOut() {
