@@ -6,5 +6,5 @@ body { margin: 0; background: #000; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
-.rich-editor img { max-width: 100%; height: auto; display: block; margin: 16px 0; border-radius: 12px; }
-::selection { background: #6f6cff88; color: white; }
+.rich-editor img { max-width: 100%; height: auto; display: block; margin: 16px 0; border-radius: 2px; }
+::selection { background: #555; color: white; }
