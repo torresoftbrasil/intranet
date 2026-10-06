@@ -125,14 +125,34 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
 .empty p { margin-bottom: 20px; color: #999; font-size: 12px; }
 .bulk-bar { position: sticky; bottom: 15px; z-index: 4; display: flex; align-items: center; flex-wrap: wrap; gap: 11px; width: fit-content; max-width: 100%; margin: 24px auto 0; padding: 12px; }
 .bulk-bar strong { margin: 0 6px; font-size: 12px; }
-.bulk-bar select { width: auto; min-width: 170px; }
+.bulk-bar hub-select { width: 190px; max-width: 100%; }
 .bulk-check { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 
+/* Kanban */
+.kanban-view { max-width: 1180px; }
+.kanban-board { display: grid; grid-template-columns: repeat(5, minmax(210px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 16px; }
+.kanban-lane { min-height: 430px; padding: 10px; background: #0d0d0d; border: 1px solid #292929; }
+.kanban-lane-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; min-height: 54px; padding: 5px 4px 12px; }
+.kanban-lane-heading h2 { margin: 0; color: #d7d7d7; font-size: 12px; font-weight: 700; line-height: 1.35; letter-spacing: 0; }
+.kanban-lane-heading span { color: #888; font-size: 11px; }
+.kanban-cards { display: grid; align-content: start; gap: 8px; min-height: 350px; }
+.kanban-card { padding: 13px; background: #181818; border: 1px solid #303030; cursor: grab; }
+.kanban-card:active { cursor: grabbing; }
+.kanban-card:hover { border-color: #666; }
+.kanban-card-body { display: grid; gap: 8px; width: 100%; padding: 0; color: $text; background: none; border: 0; text-align: left; }
+.kanban-card-body strong { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.kanban-card-body span { color: #929292; font-size: 11px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.kanban-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 13px; }
+.kanban-card-footer small { color: #aaa; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kanban-card-footer .kanban-move { width: 112px; flex: none; }
+.kanban-empty { margin: 0; padding: 15px 5px; color: #666; font-size: 11px; line-height: 1.4; }
+
 /* Demand editor */
-.editor-view { max-width: 900px; margin: 0 auto; padding-top: 45px; }
+.editor-view { max-width: 1160px; margin: 0 auto; padding-top: 45px; }
 .editor-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
 .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 38px; }
 .page-heading h1 { margin: 0; }
+.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 38px; align-items: start; }
 .editor-card { padding: 0; background: none; border: 0; }
 .editor-card > label { margin-bottom: 24px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 30px; }
@@ -149,6 +169,37 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
 .attachment button, .pending-image button { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; color: #eee; background: #222; border: 1px solid #555; font-size: 16px; }
 .pending-image { position: relative; width: 96px; height: 78px; overflow: hidden; background: $surface; border: 1px solid $line; }
 .pending-image img { width: 100%; height: 100%; object-fit: cover; }
+.comments-panel { position: sticky; top: 20px; max-height: calc(100svh - 40px); overflow-y: auto; padding-left: 22px; border-left: 1px solid #303030; }
+.comments-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.comments-heading h2 { margin: 0; font-size: 17px; letter-spacing: -.03em; }
+.comments-heading button { width: 30px; height: 30px; color: #eee; background: #1b1b1b; border: 1px solid #444; font-size: 22px; line-height: 1; }
+.comments-heading button:hover { background: #303030; }
+.comment-composer { display: grid; gap: 10px; padding: 12px; margin-bottom: 15px; background: #141414; border: 1px solid #333; }
+.comment-composer textarea, .test-dialog textarea { width: 100%; min-height: 100px; padding: 10px; color: $text; background: #1b1b1b; border: 1px solid #333; resize: vertical; font: inherit; font-size: 12px; line-height: 1.5; }
+.comment-compose-actions, .dialog-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.comment-upload { display: inline-flex; padding: 8px 0; color: #aaa; font-size: 11px; cursor: pointer; }
+.comment-upload:hover { color: #fff; }
+.comment-previews, .comment-images { display: flex; flex-wrap: wrap; gap: 7px; }
+.comment-previews .pending-image { width: 70px; height: 62px; }
+.comment-item { padding: 14px 0; border-top: 1px solid #292929; }
+.comment-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.comment-meta strong { font-size: 11px; }
+.comment-meta time { color: #777; font-size: 10px; white-space: nowrap; }
+.comment-text { margin: 9px 0 0; color: #c8c8c8; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment-images { margin-top: 10px; }
+.comment-images a { display: block; width: 100%; max-width: 180px; }
+.comment-images img { display: block; width: 100%; max-height: 160px; object-fit: contain; border: 1px solid #333; }
+.comments-empty { padding: 14px 0; color: #858585; font-size: 11px; }
+
+/* Test handoff */
+.dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 18px; background: #000c; }
+.test-dialog { display: grid; gap: 16px; width: min(100%, 430px); padding: 22px; color: $text; background: #171717; border: 1px solid #454545; box-shadow: 0 20px 60px #000a; }
+.dialog-heading { display: flex; align-items: center; justify-content: space-between; }
+.dialog-heading h2 { margin: 0; font-size: 21px; }
+.dialog-heading button { color: #aaa; background: none; border: 0; font-size: 24px; }
+.dialog-demand { margin: -8px 0 0; color: #aaa; font-size: 12px; }
+.test-dialog label { gap: 7px; }
+.dialog-error { margin: 0; color: #e8a2a2; font-size: 11px; }
 
 /* Dashboard */
 .dashboard-hero { padding: clamp(65px, 9vh, 105px) 0 36px; }
@@ -188,6 +239,8 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
 @media (max-width: 900px) {
   .filter-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .saved-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kanban-board { grid-template-columns: repeat(5, 220px); }
+  .editor-layout { grid-template-columns: minmax(0, 1fr) 270px; gap: 20px; }
 }
 @media (max-width: 700px) {
   .topbar { padding: 0 18px; }
@@ -203,11 +256,14 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
   .prompt-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .prompt-actions .primary { grid-column: 1 / -1; }
   .prompt-select { width: 100%; }
+  .prompt-status, .prompt-responsible { width: 100%; }
   .recent-row { grid-template-columns: minmax(0, 1fr) 95px; gap: 6px 10px; }
   .recent-title { grid-column: 1 / -1; }
   .recent-date { grid-column: 2; grid-row: 2; }
   .bulk-bar { width: 100%; }
-  .bulk-bar select { width: 100%; }
+  .bulk-bar hub-select { width: 100%; }
+  .editor-layout { grid-template-columns: 1fr; }
+  .comments-panel { position: static; max-height: none; padding: 22px 0 0; border-left: 0; border-top: 1px solid #303030; }
 }
 @media (max-width: 440px) {
   .wordmark { font-size: 22px; }

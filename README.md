@@ -21,16 +21,16 @@ Se a porta 4200 já estiver ocupada, use `cd apps/web && npm start -- --port 420
 ## Uso
 
 - **Tela inicial** cria a demanda sem abrir outro formulário: escreva o título e pressione Enter; ele aparece em uma caixa editável acima. Depois escreva os detalhes ou cole prints e pressione Enter novamente para salvar. Status e responsável ficam na barra inferior, iniciando em **Aguardando desenvolvimento** e **Arthur**. `Ctrl+K` abre a busca e os atalhos de navegação.
-- **Demandas** aparecem em cards. Use **Filtros** para combinar texto, status e responsável. Marque vários cards para trocar status e/ou responsável de uma só vez.
-- **Nova demanda** cria título, descrição, status e responsável. Na barra central ou na descrição, cole prints com **Ctrl+V**; também é possível usar **+ Imagem** ou **Inserir foto**. Uma prévia aparece antes de salvar, e as imagens são anexadas à demanda no salvamento. São aceitas imagens PNG/JPEG de até 10 MB cada.
+- **Minhas demandas** abre um Kanban. Arraste os cards entre as baias para mudar o status. Ao mover para **Em teste**, o Hub sugere Felipe e abre um comentário que aceita prints colados. A lista geral continua com filtros e ações em lote.
+- **Demanda aberta** mantém título, descrição, status e responsável. Cole prints com **Ctrl+V** na descrição. Os comentários aparecem à direita, do mais recente para o mais antigo, com autor, data e imagens. O botão **+** adiciona um comentário. São aceitas imagens PNG/JPEG de até 10 MB cada.
 - **Painel** mostra contagens da lista exibida e seus filtros salvos. Ajuste os filtros no Painel ou na lista e salve a combinação com um nome. A navegação fica no menu do avatar.
 
 ## Pipeline e publicação
 
 O Hub usa `hub.engenize.com.br` na VPS `2.25.109.102`, isolado da intranet já hospedada nela. O projeto Compose `engenize-hub` contém PostgreSQL, API e frontend. O banco e os uploads ficam em `/srv/torresoft-data/hub`; somente o frontend escuta em `127.0.0.1:8083`, atrás do Nginx com HTTPS. O checkout fica em `/opt/torresoft/apps/hub` e seu `.env` contém credenciais exclusivas, fora do Git. O procedimento operacional está em [deploy/hub-vps.md](deploy/hub-vps.md).
 
-O workflow `.github/workflows/pipeline.yml` testa API e Angular, valida as imagens Docker e publica o SHA da `main` por SSH. Ele usa o secret `HUB_DEPLOY_SSH_KEY` e a variable `HUB_DEPLOY_KNOWN_HOSTS`. `deploy/release.sh` faz backup do PostgreSQL antes de atualizar, testa `/healthz` e `/api/csrf` e tenta restaurar código e banco em caso de falha.
+O workflow `.github/workflows/pipeline.yml` testa API e Angular, valida as imagens Docker e publica o SHA da `main` por SSH. Ele usa o secret `HUB_DEPLOY_SSH_KEY` e a variable `HUB_DEPLOY_KNOWN_HOSTS`. `deploy/release.sh` faz backup criptografado do PostgreSQL antes de atualizar, testa `/healthz` e `/api/csrf` e tenta restaurar código e banco em caso de falha.
 
 ## Limites desta primeira versão
 
-A lista retorna até 500 demandas por consulta. O painel resume a lista filtrada atual. Ainda não há comentários, notificações, histórico de alterações nem regras de permissão diferentes entre Arthur e Felipe.
+A lista retorna até 500 demandas por consulta. O painel resume a lista filtrada atual. Ainda não há notificações, histórico de alterações nem regras de permissão diferentes entre Arthur e Felipe.

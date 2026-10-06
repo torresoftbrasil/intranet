@@ -8,3 +8,36 @@ button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
 .rich-editor img { max-width: 100%; height: auto; display: block; margin: 16px 0; border-radius: 2px; }
 ::selection { background: #555; color: white; }
+
+/* Softer movement and shared surface details */
+app-root { --motion-fast: .2s; --motion-normal: .3s; --motion-ease: cubic-bezier(.2, .75, .25, 1); }
+button, input:not([type=checkbox]):not([type=file]), textarea, .rich-editor, .glass-card, .prompt-shell, .kanban-card, .recent-row, .saved-filter {
+  transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease, box-shadow var(--motion-normal) var(--motion-ease),
+    transform var(--motion-normal) var(--motion-ease);
+}
+button, input:not([type=checkbox]):not([type=file]), textarea, .rich-editor, .glass-card, .prompt-shell, .kanban-card,
+.profile-menu, .comment-composer, .test-dialog, .palette, .saved-filter { border-radius: 8px; }
+.profile-menu, .palette, .test-dialog { border-radius: 12px; }
+input:not([type=checkbox]):not([type=file]):hover, textarea:hover, .rich-editor:hover { border-color: #555; }
+input:not([type=checkbox]):not([type=file]):focus, textarea:focus, .rich-editor:focus { border-color: #777; box-shadow: 0 0 0 3px #ffffff12; }
+.prompt-shell:focus-within { border-color: #666; box-shadow: 0 12px 40px #0005, 0 0 0 3px #ffffff0d; }
+.demand-card:hover, .kanban-card:hover, .stat-card.clickable:hover { transform: translateY(-2px); box-shadow: 0 12px 30px #0006; }
+.primary:hover, .secondary:hover, .ghost-button:hover, .quick-actions button:hover { transform: translateY(-1px); }
+.primary:active, .secondary:active, .ghost-button:active { transform: translateY(0); }
+.home-view, .editor-view, .list-view, .dashboard-hero, .stats-grid, .panel-card { animation: view-appear .32s var(--motion-ease); }
+.profile-menu, .comment-composer, .filter-card, .bulk-bar, .message, .palette { animation: panel-appear .22s var(--motion-ease); }
+.dialog-backdrop, .palette-backdrop { animation: backdrop-appear .22s ease; }
+.test-dialog { animation: dialog-appear .3s var(--motion-ease); }
+.kanban-card, .demand-card, .recent-row { animation: card-appear .28s var(--motion-ease); }
+.comments-heading button { border-radius: 8px; }
+.comment-upload { display: inline-flex; align-items: center; min-height: 34px; padding: 0 10px; color: #ddd; background: #222; border: 1px solid #444; border-radius: 7px; transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease; }
+.comment-upload:hover { background: #303030; border-color: #777; }
+@keyframes view-appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes panel-appear { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes backdrop-appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dialog-appear { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes card-appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

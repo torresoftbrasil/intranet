@@ -29,8 +29,8 @@
       <ng-template #filterControls>
         <section class="filter-card glass-card" aria-label="Filtros de demandas">
           <label>Buscar<input [(ngModel)]="search" (keyup.enter)="searchDemands()" placeholder="Título ou descrição"></label>
-          <label>Status<select [(ngModel)]="filterStatus"><option value="">Todos</option>@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select></label>
-          <label>Responsável<select [(ngModel)]="filterPerson"><option value="">Todos</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select></label>
+          <label>Status<hub-select [(ngModel)]="filterStatus" [options]="filterStatusOptions" ariaLabel="Filtrar por status" /></label>
+          <label>Responsável<hub-select [(ngModel)]="filterPerson" [options]="filterPersonOptions()" ariaLabel="Filtrar por responsável" /></label>
           <button class="secondary" (click)="searchDemands()">Aplicar filtros</button><button class="text-button" (click)="clearFilters()">Limpar</button>
         </section>
       </ng-template>
@@ -38,16 +38,32 @@
         <section class="editor-view">
           <div class="editor-top"><button class="back-link" (click)="closeEditor()">{{ page() === 'inicio' ? '← Início' : page() === 'painel' ? '← Painel' : '← Demandas' }}</button><span class="eyebrow">{{ current() ? 'DEMANDA #' + current()!.id : 'NOVA DEMANDA' }}</span></div>
           <div class="page-heading"><h1>{{ current() ? 'Editar demanda.' : 'Nova demanda.' }}</h1><button class="primary" (click)="save()" [disabled]="busy()">Salvar demanda →</button></div>
-          <section class="editor-card glass-card">
-            <label>Título da demanda<input [(ngModel)]="title" maxlength="180" placeholder="O que precisa ser feito?"></label>
-            <div class="form-row"><label>Status<select [(ngModel)]="status">@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select></label>
-              <label>Responsável<select [(ngModel)]="responsible"><option value="">Sem responsável</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select></label></div>
-            <div class="editor-label">Descrição</div><p class="hint">Escreva livremente. Cole um print com Ctrl+V ou adicione uma foto.</p>
-            <div #editor class="rich-editor" contenteditable="true" (paste)="pasteImages($event)" role="textbox" aria-label="Descrição da demanda" aria-multiline="true" data-placeholder="Conte o contexto, o resultado esperado e qualquer detalhe importante..."></div>
-            <div class="attachments-head"><div><strong>Fotos da demanda</strong><p class="hint">Imagens PNG ou JPEG, até 10 MB cada.</p></div><label class="upload-button">+ Inserir foto<input type="file" accept="image/png,image/jpeg" multiple (change)="chooseImages($event)" hidden></label></div>
-            @if (pendingImages().length) { <div class="pending-images" aria-label="Imagens prontas para anexar">@for (image of pendingImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removePendingImage(image.id)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div><p class="hint">As imagens serão anexadas ao salvar a demanda.</p> }
-            @if (attachments().length) { <div class="attachments">@for (item of attachments(); track item.id) { <div class="attachment"><img [src]="'/api/demandas/' + current()!.id + '/anexos/' + item.id + '/arquivo'" [alt]="item.nome"><span>{{ item.nome }}</span><button (click)="removeAttachment(item)" [attr.aria-label]="'Remover ' + item.nome">×</button></div> }</div> }
-          </section>
+          <div class="editor-layout">
+            <section class="editor-card glass-card">
+              <label>Título da demanda<input [(ngModel)]="title" maxlength="180" placeholder="O que precisa ser feito?"></label>
+              <div class="form-row"><label>Status<hub-select [(ngModel)]="status" [options]="statusOptions" ariaLabel="Status da demanda" /></label>
+                <label>Responsável<hub-select [(ngModel)]="responsible" [options]="personOptions()" ariaLabel="Responsável da demanda" /></label></div>
+              <div class="editor-label">Descrição</div>
+              <div #editor class="rich-editor" contenteditable="true" (paste)="pasteImages($event)" role="textbox" aria-label="Descrição da demanda" aria-multiline="true" data-placeholder="Escreva livremente ou cole um print..."></div>
+              @if (pendingImages().length) { <div class="pending-images" aria-label="Imagens prontas para anexar">@for (image of pendingImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removePendingImage(image.id)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div><p class="hint">As imagens serão anexadas ao salvar.</p> }
+            </section>
+            <aside class="comments-panel" aria-label="Comentários da demanda">
+              <div class="comments-heading"><h2>Comentários</h2><button type="button" (click)="commentComposerOpen.update(open => !open)" aria-label="Adicionar comentário" [attr.aria-expanded]="commentComposerOpen()">+</button></div>
+              @if (commentComposerOpen()) {
+                <div class="comment-composer">
+                  <textarea [(ngModel)]="commentDraft" (paste)="pasteCommentImage($event, 'comment')" aria-label="Novo comentário" placeholder="Escreva ou cole um print..." maxlength="5000"></textarea>
+                  @if (commentImages().length) { <div class="comment-previews">@for (image of commentImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removeCommentImage(image.id, commentImages)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div> }
+                  <div class="comment-compose-actions"><label class="comment-upload">Imagem<input type="file" accept="image/png,image/jpeg" multiple (change)="chooseCommentImages($event, 'comment')" hidden></label><button class="primary" (click)="submitComment()" [disabled]="busy()">Publicar</button></div>
+                </div>
+              }
+              <div class="comments-list">@for (comment of comments(); track comment.id) {
+                <article class="comment-item"><div class="comment-meta"><strong>{{ comment.autor }}</strong><time [attr.datetime]="comment.criadoEm">{{ commentDate(comment.criadoEm) }}</time></div>
+                  @if (comment.texto) { <p class="comment-text">{{ comment.texto }}</p> }
+                  @if (comment.imagens.length) { <div class="comment-images">@for (image of comment.imagens; track image.id) { <a [href]="image.url" target="_blank" rel="noopener noreferrer"><img [src]="image.url" [alt]="image.nome"></a> }</div> }
+                </article>
+              } @empty { <p class="comments-empty">Nenhum comentário ainda.</p> }</div>
+            </aside>
+          </div>
         </section>
       } @else if (page() === 'inicio') {
         <div class="home-view">
@@ -57,7 +73,7 @@
             @if (quickTitleReady) { <input class="prompt-title" [(ngModel)]="quickTitle" (keydown.enter)="focusPrompt($event)" maxlength="180" aria-label="Título da demanda" placeholder="Título"> }
             <textarea #promptInput [(ngModel)]="commandText" (keydown.enter)="onPromptEnter($event)" (paste)="pasteImages($event)" rows="2" [attr.aria-label]="quickTitleReady ? 'Descrição da nova demanda' : 'Título da nova demanda'" [placeholder]="quickTitleReady ? 'Descreva a demanda ou cole um print...' : 'Digite o título da demanda...'"></textarea>
             @if (pendingImages().length) { <div class="pending-images" aria-label="Imagens prontas para anexar">@for (image of pendingImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removePendingImage(image.id)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div> }
-            <div class="prompt-toolbar"><span>{{ quickTitleReady ? 'Enter para salvar · Shift + Enter para nova linha' : 'Enter para incluir título' }}</span><div class="prompt-actions"><select class="prompt-select prompt-status" [(ngModel)]="quickStatus" aria-label="Status da nova demanda">@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select><select class="prompt-select prompt-responsible" [(ngModel)]="quickResponsible" aria-label="Responsável da nova demanda"><option value="">Sem responsável</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select><button class="primary" (click)="advancePrompt()" [disabled]="busy() || (!quickTitleReady && !commandText.trim())">{{ quickTitleReady ? 'Salvar demanda →' : 'Incluir título →' }}</button></div></div></div></div>
+            <div class="prompt-toolbar"><span>{{ quickTitleReady ? 'Enter para salvar · Shift + Enter para nova linha' : 'Enter para incluir título' }}</span><div class="prompt-actions"><hub-select class="prompt-status" [(ngModel)]="quickStatus" [options]="statusOptions" ariaLabel="Status da nova demanda" /><hub-select class="prompt-responsible" [(ngModel)]="quickResponsible" [options]="personOptions()" ariaLabel="Responsável da nova demanda" /><button class="primary" (click)="advancePrompt()" [disabled]="busy() || (!quickTitleReady && !commandText.trim())">{{ quickTitleReady ? 'Salvar demanda →' : 'Incluir título →' }}</button></div></div></div></div>
           <div class="quick-actions"><button (click)="showMine()">Minhas demandas</button><button (click)="showAll()">Todas as demandas →</button><button (click)="navigate('painel')">Painel →</button></div>
         </section>
         <section class="recent-section" aria-label="Demandas abertas recentemente">
@@ -74,13 +90,27 @@
         </section>
         </div>
       } @else if (page() === 'demandas') {
-        <section class="work-section list-view"><div class="section-heading"><div><button class="back-link" (click)="navigate('inicio')">← Início</button><h1>Demandas.</h1></div><div class="section-actions"><button class="ghost-button" (click)="editNew()">+ Nova demanda</button><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">Filtros</button><button class="ghost-button" (click)="navigate('painel')">Painel →</button></div></div>
+        <section class="work-section list-view" [class.kanban-view]="listMode() === 'kanban'"><div class="section-heading"><div><button class="back-link" (click)="navigate('inicio')">← Início</button><h1>{{ listMode() === 'kanban' ? 'Minhas demandas.' : 'Demandas.' }}</h1></div><div class="section-actions"><button class="ghost-button" (click)="editNew()">+ Nova demanda</button><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">Filtros</button><button class="ghost-button" (click)="navigate('painel')">Painel →</button></div></div>
           @if (filtersOpen()) { <ng-container *ngTemplateOutlet="filterControls"></ng-container> }
-          @if (demands().length) { <div class="list-tools"><label><input type="checkbox" [checked]="selected().length === demands().length" (change)="toggleAll($any($event.target).checked)"> Selecionar todas</label><span>Atualizadas recentemente</span></div>
+          @if (listMode() === 'kanban') {
+            <div class="kanban-board" aria-label="Kanban de demandas">
+              @for (lane of statuses; track lane.value) {
+                <section class="kanban-lane" (dragover)="allowDrop($event)" (drop)="dropDemand($event, lane.value)">
+                  <div class="kanban-lane-heading"><h2>{{ lane.label }}</h2><span>{{ laneDemands(lane.value).length }}</span></div>
+                  <div class="kanban-cards">@for (demand of laneDemands(lane.value); track demand.id) {
+                    <article class="kanban-card" draggable="true" (dragstart)="startDrag($event, demand)">
+                      <button class="kanban-card-body" (click)="editExisting(demand)"><strong>{{ demand.titulo }}</strong><span>{{ plainText(demand.descricao) || 'Sem descrição' }}</span></button>
+                      <div class="kanban-card-footer"><small>{{ demand.responsavel || 'Sem responsável' }}</small><hub-select class="kanban-move" [controlled]="true" [displayValue]="demand.status" (selectionChange)="selectKanbanStatus(demand, $event)" [options]="statusOptions" [ariaLabel]="'Mover ' + demand.titulo" /></div>
+                    </article>
+                  } @empty { <p class="kanban-empty">Arraste uma demanda para cá</p> }</div>
+                </section>
+              }
+            </div>
+          } @else if (demands().length) { <div class="list-tools"><label><input type="checkbox" [checked]="selected().length === demands().length" (change)="toggleAll($any($event.target).checked)"> Selecionar todas</label><span>Atualizadas recentemente</span></div>
             <div class="demand-grid">@for (demand of demands(); track demand.id) { <article class="demand-card glass-card" [class.is-selected]="selected().includes(demand.id)"><div class="card-top"><span class="card-id">DEMANDA #{{ demand.id }}</span><input type="checkbox" [attr.aria-label]="'Selecionar demanda ' + demand.id" [checked]="selected().includes(demand.id)" (change)="toggle(demand.id, $any($event.target).checked)"></div><button class="card-body" (click)="editExisting(demand)"><h3>{{ demand.titulo }}</h3><p>{{ plainText(demand.descricao) || 'Abra para adicionar mais detalhes à demanda.' }}</p></button><div class="card-bottom"><span class="status-pill" [attr.data-status]="demand.status">{{ statusLabel(demand.status) }}</span><span class="card-person"><span class="mini-avatar">{{ (demand.responsavel || '?').slice(0,1) }}</span>{{ demand.responsavel || 'Sem responsável' }}</span></div><div class="card-date">Atualizada em {{ demand.atualizadoEm | date:'dd/MM/yyyy' }}</div></article> }</div>
           } @else { <div class="empty glass-card"><h3>Nenhuma demanda por aqui ainda.</h3><p>Abra uma demanda no início ou ajuste os filtros.</p><button class="secondary" (click)="editNew()">Abrir demanda →</button></div> }
         </section>
-        @if (selected().length) { <section class="bulk-bar glass-card" aria-label="Ações em lote"><strong>{{ selected().length }} selecionada(s)</strong><select [(ngModel)]="bulkStatus" aria-label="Novo status"><option value="">Manter status</option>@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select><label class="bulk-check"><input type="checkbox" [(ngModel)]="bulkAssign"> Alterar responsável</label>@if (bulkAssign) { <select [(ngModel)]="bulkPerson" aria-label="Novo responsável"><option value="">Sem responsável</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select> }<button class="primary" (click)="applyBulk()" [disabled]="!bulkStatus && !bulkAssign">Aplicar ações</button></section> }
+        @if (selected().length) { <section class="bulk-bar glass-card" aria-label="Ações em lote"><strong>{{ selected().length }} selecionada(s)</strong><hub-select [(ngModel)]="bulkStatus" [options]="bulkStatusOptions" ariaLabel="Novo status" /><label class="bulk-check"><input type="checkbox" [(ngModel)]="bulkAssign"> Alterar responsável</label>@if (bulkAssign) { <hub-select [(ngModel)]="bulkPerson" [options]="personOptions()" ariaLabel="Novo responsável" /> }<button class="primary" (click)="applyBulk()" [disabled]="!bulkStatus && !bulkAssign">Aplicar ações</button></section> }
       } @else {
         <section class="dashboard-hero"><h1>Painel.</h1></section>
         <div class="panel-filter-toggle"><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">Ajustar filtros</button><button class="ghost-button" (click)="showAll()">Todas as demandas →</button></div>
@@ -91,6 +121,19 @@
         </section>
       }
     </main>
+    @if (testModal()) {
+      <div class="dialog-backdrop" (click)="busy() ? null : closeTestModal()">
+        <section class="test-dialog" role="dialog" aria-modal="true" aria-label="Enviar demanda para teste" (click)="$event.stopPropagation()">
+          <div class="dialog-heading"><h2>Enviar para teste</h2><button (click)="closeTestModal()" [disabled]="busy()" aria-label="Fechar">×</button></div>
+          <p class="dialog-demand">{{ testModal()!.titulo }}</p>
+          <label>Responsável<hub-select [(ngModel)]="testResponsible" [options]="personOptions()" ariaLabel="Responsável pelo teste" /></label>
+          <label>Comentário<textarea [(ngModel)]="testComment" (paste)="pasteCommentImage($event, 'test')" placeholder="Escreva ou cole um print..." maxlength="5000"></textarea></label>
+          @if (testImages().length) { <div class="comment-previews">@for (image of testImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removeCommentImage(image.id, testImages)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div> }
+          <div class="dialog-actions"><label class="comment-upload">Imagem<input type="file" accept="image/png,image/jpeg" multiple (change)="chooseCommentImages($event, 'test')" hidden></label><button class="primary" (click)="submitTest()" [disabled]="busy()">Enviar para teste →</button></div>
+          @if (error()) { <p class="dialog-error" role="alert">{{ error() }}</p> }
+        </section>
+      </div>
+    }
     @if (paletteOpen()) { <div class="palette-backdrop" (click)="paletteOpen.set(false)"><div class="palette glass-card" role="dialog" aria-label="Comandos rápidos" (click)="$event.stopPropagation()"><div class="palette-search"><input #paletteInput [(ngModel)]="paletteQuery" (keydown.enter)="useCommand(paletteQuery)" placeholder="Buscar, criar ou ir para..." aria-label="Comando rápido"><kbd>ESC</kbd></div><div class="palette-actions"><p>ATALHOS</p><button (click)="navigate('inicio')"><span>Início</span></button><button (click)="showAll()"><span>Todas as demandas</span><kbd>G D</kbd></button><button (click)="navigate('painel')"><span>Painel</span><kbd>G P</kbd></button><button (click)="showMine()"><span>Minhas demandas</span></button><button (click)="editNew(); paletteOpen.set(false)"><span>Nova demanda</span></button></div></div></div> }
   </div>
 }

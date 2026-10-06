@@ -14,7 +14,7 @@ spring:
   servlet:
     multipart:
       max-file-size: 10MB
-      max-request-size: 10MB
+      max-request-size: 55MB
 server:
   port: ${APP_PORT:8083}
   forward-headers-strategy: framework

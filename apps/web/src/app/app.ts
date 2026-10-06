@@ -1,10 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Component, ElementRef, HostListener, ViewChild, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, ViewChild, computed, inject, signal, WritableSignal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { DomSanitizer } from '@angular/platform-browser';
 import { SecurityContext } from '@angular/core';
+import { HubOption, HubSelect } from './hub-select';
 
 type Status = 'AGUARDANDO_DESENVOLVIMENTO' | 'EM_DESENVOLVIMENTO' | 'DESENVOLVIMENTO_EM_PROGRESSO' | 'EM_TESTE' | 'REABERTA';
 type Person = { id: number; login: string; nome: string };
@@ -13,6 +14,7 @@ type RecentDemand = Pick<Demand, 'id' | 'titulo' | 'responsavel' | 'criadoEm'>;
 type Attachment = { id: number; nome: string; tipo: string; tamanho: number };
 type PendingImage = { id: number; file: File; previewUrl: string };
 type SavedFilter = { id: number; nome: string; texto: string | null; status: Status | null; responsavelId: number | null };
+type Comment = { id: number; texto: string; autor: string; criadoEm: string; imagens: {id: number; nome: string; url: string}[] };
 const statuses: {value: Status; label: string}[] = [
   {value: 'AGUARDANDO_DESENVOLVIMENTO', label: 'Aguardando desenvolvimento'},
   {value: 'EM_DESENVOLVIMENTO', label: 'Em desenvolvimento'},
@@ -21,7 +23,7 @@ const statuses: {value: Status; label: string}[] = [
   {value: 'REABERTA', label: 'Reaberta'}
 ];
 
-@Component({selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule], templateUrl: './app.html', styleUrl: './app.scss'})
+@Component({selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule, HubSelect], templateUrl: './app.html', styleUrl: './app.scss'})
 export class App {
   private http = inject(HttpClient);
   private sanitizer = inject(DomSanitizer);
@@ -29,14 +31,25 @@ export class App {
   @ViewChild('paletteInput') paletteInput?: ElementRef<HTMLInputElement>;
   @ViewChild('promptInput') promptInput?: ElementRef<HTMLTextAreaElement>;
   statuses = statuses;
+  statusOptions: HubOption[] = statuses;
+  filterStatusOptions: HubOption[] = [{value: '', label: 'Todos os status'}, ...statuses];
+  bulkStatusOptions: HubOption[] = [{value: '', label: 'Manter status'}, ...statuses];
   me = signal<Person | null>(null);
   page = signal<'inicio' | 'demandas' | 'painel'>('inicio');
   demands = signal<Demand[]>([]);
   recentDemands = signal<RecentDemand[]>([]);
   people = signal<Person[]>([]);
+  personOptions = computed<HubOption[]>(() => [{value: '', label: 'Sem responsável'}, ...this.people().map(person => ({value: String(person.id), label: person.nome}))]);
+  filterPersonOptions = computed<HubOption[]>(() => [{value: '', label: 'Todos os responsáveis'}, ...this.people().map(person => ({value: String(person.id), label: person.nome}))]);
   filters = signal<SavedFilter[]>([]);
   attachments = signal<Attachment[]>([]);
   pendingImages = signal<PendingImage[]>([]);
+  comments = signal<Comment[]>([]);
+  commentImages = signal<PendingImage[]>([]);
+  testImages = signal<PendingImage[]>([]);
+  commentComposerOpen = signal(false);
+  testModal = signal<Demand | null>(null);
+  listMode = signal<'cards' | 'kanban'>('cards');
   private nextImageId = 0;
   selected = signal<number[]>([]);
   current = signal<Demand | null>(null);
@@ -56,6 +69,10 @@ export class App {
   description = '';
   status: Status = 'AGUARDANDO_DESENVOLVIMENTO';
   responsible = '';
+  commentDraft = '';
+  testComment = '';
+  testResponsible = '';
+  private testMoved = false;
 
   constructor() { void this.initialize(); }
 
@@ -80,6 +97,7 @@ export class App {
   }
   async signOut() {
     this.clearPendingImages();
+    this.clearImageList(this.commentImages); this.clearImageList(this.testImages);
     this.quickTitle = ''; this.quickTitleReady = false; this.commandText = ''; this.quickResponsible = '';
     this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
     this.quickSavedId = null; this.quickImageHtml = '';
@@ -118,7 +136,11 @@ export class App {
       const full = await firstValueFrom(this.http.get<Demand>(`/api/demandas/${demand.id}`));
       this.current.set(full); this.title = full.titulo; this.description = full.descricao ?? '';
       this.status = full.status; this.responsible = full.responsavelId ? String(full.responsavelId) : '';
-      this.attachments.set(await firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${demand.id}/anexos`)));
+      const [attachments, comments] = await Promise.all([
+        firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${demand.id}/anexos`)),
+        firstValueFrom(this.http.get<Comment[]>(`/api/demandas/${demand.id}/comentarios`))
+      ]);
+      this.attachments.set(attachments); this.comments.set(comments);
       setTimeout(() => { if (this.editor) this.editor.nativeElement.innerHTML = this.sanitizer.sanitize(SecurityContext.HTML, this.description) ?? ''; });
     } catch { this.error.set('Não foi possível abrir a demanda.'); }
   }
@@ -140,7 +162,10 @@ export class App {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault(); this.menuOpen.set(false); this.paletteOpen.update(open => !open);
       if (this.paletteOpen()) setTimeout(() => this.paletteInput?.nativeElement.focus());
-    } else if (event.key === 'Escape') { this.paletteOpen.set(false); this.menuOpen.set(false); }
+    } else if (event.key === 'Escape') {
+      this.paletteOpen.set(false); this.menuOpen.set(false);
+      if (this.testModal() && !this.busy()) this.closeTestModal();
+    }
   }
 
   navigate(page: 'inicio' | 'demandas' | 'painel') {
@@ -234,11 +259,13 @@ export class App {
   showMine() {
     this.search = ''; this.filterStatus = '';
     this.filterPerson = String(this.me()?.id ?? '');
-    this.filtersOpen.set(true); this.navigate('demandas'); void this.searchDemands();
+    this.listMode.set('kanban');
+    this.filtersOpen.set(false); this.navigate('demandas'); void this.searchDemands();
   }
 
   showAll() {
     this.search = ''; this.filterStatus = ''; this.filterPerson = '';
+    this.listMode.set('cards');
     this.filtersOpen.set(false); this.navigate('demandas'); void this.searchDemands();
   }
 
@@ -252,9 +279,16 @@ export class App {
       return `Hoje, ${new Intl.DateTimeFormat('pt-BR', {hour: '2-digit', minute: '2-digit'}).format(date)}`;
     return new Intl.DateTimeFormat('pt-BR', {day: '2-digit', month: '2-digit', year: 'numeric'}).format(date);
   }
+  commentDate(value: string) {
+    return new Intl.DateTimeFormat('pt-BR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}).format(new Date(value));
+  }
   editNew() { this.navigate('inicio'); setTimeout(() => this.promptInput?.nativeElement.focus()); }
   async editExisting(demand: Pick<Demand, 'id'>) { await this.open(demand); this.editing.set(true); }
-  closeEditor() { if (this.editing()) this.clearPendingImages(); this.editing.set(false); this.current.set(null); }
+  closeEditor() {
+    if (this.editing()) this.clearPendingImages();
+    this.clearImageList(this.commentImages); this.commentDraft = ''; this.commentComposerOpen.set(false);
+    this.editing.set(false); this.current.set(null); this.comments.set([]);
+  }
 
   pasteImages(event: ClipboardEvent) {
     const images = Array.from(event.clipboardData?.items ?? [])
@@ -308,6 +342,137 @@ export class App {
     if (accepted.length) this.pendingImages.update(items => [...items, ...accepted.map(file => ({
       id: ++this.nextImageId, file, previewUrl: URL.createObjectURL(file)
     }))]);
+  }
+
+  private addImageList(files: File[], target: WritableSignal<PendingImage[]>) {
+    const accepted = files.filter(file => ['image/png', 'image/jpeg'].includes(file.type) && file.size <= 10_000_000);
+    if (accepted.length !== files.length) this.error.set('Use imagens PNG ou JPEG de até 10 MB cada.');
+    if (target().length + accepted.length > 5) { this.error.set('Use até 5 imagens por comentário.'); return; }
+    target.update(items => [...items, ...accepted.map(file => ({id: ++this.nextImageId, file, previewUrl: URL.createObjectURL(file)}))]);
+  }
+
+  removeCommentImage(id: number, target: WritableSignal<PendingImage[]>) {
+    const image = target().find(item => item.id === id);
+    if (image) URL.revokeObjectURL(image.previewUrl);
+    target.update(items => items.filter(item => item.id !== id));
+  }
+
+  private clearImageList(target: WritableSignal<PendingImage[]>) {
+    for (const image of target()) URL.revokeObjectURL(image.previewUrl);
+    target.set([]);
+  }
+
+  pasteCommentImage(event: ClipboardEvent, target: 'comment' | 'test') {
+    const files = Array.from(event.clipboardData?.items ?? [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile()).filter((file): file is File => !!file);
+    if (!files.length) return;
+    event.preventDefault();
+    const text = event.clipboardData?.getData('text/plain');
+    if (text && event.target instanceof HTMLTextAreaElement) {
+      const input = event.target;
+      input.setRangeText(text, input.selectionStart, input.selectionEnd, 'end');
+      if (target === 'comment') this.commentDraft = input.value;
+      else this.testComment = input.value;
+    }
+    this.addImageList(files, target === 'comment' ? this.commentImages : this.testImages);
+  }
+
+  chooseCommentImages(event: Event, target: 'comment' | 'test') {
+    const input = event.target as HTMLInputElement;
+    this.addImageList(Array.from(input.files ?? []), target === 'comment' ? this.commentImages : this.testImages);
+    input.value = '';
+  }
+
+  private async postComment(demandId: number, message: string, images: PendingImage[]) {
+    const form = new FormData();
+    form.append('texto', message.trim());
+    for (const image of images) form.append('imagem', image.file, image.file.name);
+    await firstValueFrom(this.http.post<Comment>(`/api/demandas/${demandId}/comentarios`, form));
+  }
+
+  async loadComments(demandId: number) {
+    this.comments.set(await firstValueFrom(this.http.get<Comment[]>(`/api/demandas/${demandId}/comentarios`)));
+  }
+
+  async submitComment() {
+    const current = this.current();
+    if (!current || this.busy()) return;
+    if (!this.commentDraft.trim() && !this.commentImages().length) { this.error.set('Escreva um comentário ou cole uma imagem.'); return; }
+    this.busy.set(true); this.error.set('');
+    try {
+      await this.postComment(current.id, this.commentDraft, this.commentImages());
+      this.clearImageList(this.commentImages); this.commentDraft = ''; this.commentComposerOpen.set(false);
+      await this.loadComments(current.id);
+    } catch (e) { this.error.set(this.errorText(e)); }
+    finally { this.busy.set(false); }
+  }
+
+  laneDemands(status: Status) { return this.demands().filter(item => item.status === status); }
+
+  startDrag(event: DragEvent, demand: Demand) {
+    event.dataTransfer?.setData('text/plain', String(demand.id));
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  allowDrop(event: DragEvent) { event.preventDefault(); }
+
+  dropDemand(event: DragEvent, status: Status) {
+    event.preventDefault();
+    const id = Number(event.dataTransfer?.getData('text/plain'));
+    const demand = this.demands().find(item => item.id === id);
+    if (demand) this.requestStatusChange(demand, status);
+  }
+
+  selectKanbanStatus(demand: Demand, value: string) {
+    if (statuses.some(item => item.value === value)) this.requestStatusChange(demand, value as Status);
+  }
+
+  requestStatusChange(demand: Demand, status: Status) {
+    if (status === demand.status || this.busy()) return;
+    if (status === 'EM_TESTE') {
+      this.testResponsible = String(this.people().find(person => person.login === 'felipe')?.id ?? demand.responsavelId ?? '');
+      this.testComment = ''; this.testMoved = false; this.testModal.set(demand);
+      return;
+    }
+    void this.moveDemand(demand, status, demand.responsavelId || null);
+  }
+
+  private async moveDemand(demand: Demand, status: Status, responsibleId: number | null) {
+    this.busy.set(true); this.error.set('');
+    try {
+      await firstValueFrom(this.http.put<Demand>(`/api/demandas/${demand.id}`, {
+        titulo: demand.titulo, descricao: demand.descricao ?? '', status, responsavelId: responsibleId
+      }));
+      await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
+    } catch (e) { this.error.set(this.errorText(e)); }
+    finally { this.busy.set(false); }
+  }
+
+  closeTestModal() {
+    this.testModal.set(null); this.testComment = ''; this.testResponsible = '';
+    this.testMoved = false; this.clearImageList(this.testImages);
+  }
+
+  async submitTest() {
+    const demand = this.testModal();
+    if (!demand || this.busy()) return;
+    this.busy.set(true); this.error.set('');
+    try {
+      if (!this.testMoved) {
+        await firstValueFrom(this.http.put<Demand>(`/api/demandas/${demand.id}`, {
+          titulo: demand.titulo, descricao: demand.descricao ?? '', status: 'EM_TESTE',
+          responsavelId: this.testResponsible ? Number(this.testResponsible) : null
+        }));
+        this.testMoved = true;
+        await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
+      }
+      if (this.testComment.trim() || this.testImages().length)
+        await this.postComment(demand.id, this.testComment, this.testImages());
+      this.closeTestModal();
+      this.notice.set('Demanda enviada para teste.');
+    } catch (e) { this.error.set(this.errorText(e)); }
+    finally { this.busy.set(false); }
   }
 
   private async uploadPendingImages(demandId: number) {
