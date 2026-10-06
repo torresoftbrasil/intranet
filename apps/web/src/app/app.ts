@@ -26,6 +26,7 @@ export class App {
   private sanitizer = inject(DomSanitizer);
   @ViewChild('editor') editor?: ElementRef<HTMLDivElement>;
   @ViewChild('paletteInput') paletteInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('promptInput') promptInput?: ElementRef<HTMLTextAreaElement>;
   statuses = statuses;
   me = signal<Person | null>(null);
   page = signal<'demandas' | 'painel'>('demandas');
@@ -77,6 +78,8 @@ export class App {
   }
   async signOut() {
     this.clearPendingImages();
+    this.quickTitle = ''; this.quickTitleReady = false; this.commandText = ''; this.quickResponsible = '';
+    this.quickSavedId = null; this.quickImageHtml = '';
     await firstValueFrom(this.http.post('/api/logout', {}));
     this.me.set(null); this.current.set(null); this.demands.set([]);
     await firstValueFrom(this.http.get('/api/csrf'));
@@ -86,7 +89,9 @@ export class App {
       firstValueFrom(this.http.get<Person[]>('/api/usuarios')),
       firstValueFrom(this.http.get<SavedFilter[]>('/api/filtros'))
     ]);
-    this.people.set(people); this.filters.set(filters); await this.searchDemands();
+    this.people.set(people); this.filters.set(filters);
+    if (!this.quickResponsible) this.quickResponsible = String(this.me()?.id ?? '');
+    await this.searchDemands();
   }
   async searchDemands() {
     this.selected.set([]);
@@ -120,6 +125,11 @@ export class App {
   paletteOpen = signal(false);
   filtersOpen = signal(false);
   commandText = '';
+  quickTitle = '';
+  quickTitleReady = false;
+  quickResponsible = '';
+  private quickSavedId: number | null = null;
+  private quickImageHtml = '';
   paletteQuery = '';
 
   @HostListener('document:keydown', ['$event'])
@@ -134,14 +144,14 @@ export class App {
     this.page.set(page); this.closeEditor(); this.menuOpen.set(false); this.paletteOpen.set(false);
   }
 
-  useCommand(value = this.commandText) {
-    const text = value.trim(); if (!text && !this.pendingImages().length) return;
+  useCommand(value = this.paletteQuery) {
+    const text = value.trim(); if (!text) return;
     this.paletteOpen.set(false);
-    if (!this.pendingImages().length && /^(buscar|pesquisar)\s+/i.test(text)) {
+    if (/^(buscar|pesquisar)\s+/i.test(text)) {
       this.search = text.replace(/^(buscar|pesquisar)\s+/i, '');
       this.filtersOpen.set(true); this.navigate('demandas'); void this.searchDemands();
-    } else if (!this.pendingImages().length && /^(ver\s+)?painel$/i.test(text)) { this.navigate('painel'); }
-    else if (!this.pendingImages().length && /^(minhas demandas|meus itens)$/i.test(text)) { this.showMine(); }
+    } else if (/^(ver\s+)?painel$/i.test(text)) { this.navigate('painel'); }
+    else if (/^(minhas demandas|meus itens)$/i.test(text)) { this.showMine(); }
     else {
       this.editNew();
       const title = text.replace(/^(criar|abrir|adicionar|nova)\s+(uma\s+)?(demanda|tarefa)(\s+de)?\s*/i, '').trim() || text;
@@ -150,11 +160,69 @@ export class App {
       this.title = person ? title.slice(0, match!.index).trim() : title;
       this.responsible = person ? String(person.id) : '';
     }
-    this.commandText = ''; this.paletteQuery = '';
+    this.paletteQuery = '';
   }
 
-  onCommandEnter(event: Event) {
-    if (!(event as KeyboardEvent).shiftKey) { event.preventDefault(); this.useCommand(); }
+  onPromptEnter(event: Event) {
+    if ((event as KeyboardEvent).shiftKey) return;
+    event.preventDefault();
+    this.advancePrompt();
+  }
+
+  focusPrompt(event: Event) {
+    event.preventDefault();
+    this.promptInput?.nativeElement.focus();
+  }
+
+  advancePrompt() {
+    if (this.quickTitleReady) { void this.saveFromPrompt(); return; }
+    const [firstLine, ...rest] = this.commandText.split('\n');
+    const title = firstLine.trim();
+    if (!title) { this.error.set('Escreva um título para a demanda.'); return; }
+    if (title.length > 180) { this.error.set('O título deve ter até 180 caracteres.'); return; }
+    this.quickTitle = title;
+    this.quickTitleReady = true;
+    this.commandText = rest.join('\n').trimStart();
+    this.error.set('');
+    setTimeout(() => this.promptInput?.nativeElement.focus());
+  }
+
+  private promptDescription() {
+    const container = document.createElement('div');
+    container.textContent = this.commandText.trim();
+    return container.innerHTML.replace(/\n/g, '<br>') + this.quickImageHtml;
+  }
+
+  async saveFromPrompt() {
+    if (this.busy()) return;
+    if (!this.quickTitle.trim()) { this.error.set('Escreva um título para a demanda.'); return; }
+    this.busy.set(true); this.error.set('');
+    const body = {titulo: this.quickTitle.trim(), descricao: this.promptDescription(),
+      status: 'AGUARDANDO_DESENVOLVIMENTO' as Status,
+      responsavelId: this.quickResponsible ? Number(this.quickResponsible) : null};
+    try {
+      const request = this.quickSavedId
+        ? this.http.put<Demand>(`/api/demandas/${this.quickSavedId}`, body)
+        : this.http.post<Demand>('/api/demandas', body);
+      const saved = await firstValueFrom(request);
+      this.quickSavedId = saved.id;
+      const uploads = await this.uploadPendingImages(saved.id);
+      if (uploads.uploaded) {
+        this.quickImageHtml += uploads.html;
+        await firstValueFrom(this.http.put<Demand>(`/api/demandas/${saved.id}`, {...body, descricao: this.promptDescription()}));
+      }
+      await this.searchDemands();
+      if (uploads.failed) {
+        this.error.set(`${uploads.failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
+      } else {
+        this.notice.set('Demanda salva.');
+        this.quickTitle = ''; this.quickTitleReady = false; this.commandText = '';
+        this.quickSavedId = null; this.quickImageHtml = '';
+        this.quickResponsible = String(this.me()?.id ?? '');
+        this.clearPendingImages();
+      }
+    } catch (e) { this.error.set(this.errorText(e)); }
+    finally { this.busy.set(false); }
   }
 
   showMine() {
@@ -223,6 +291,23 @@ export class App {
     }))]);
   }
 
+  private async uploadPendingImages(demandId: number) {
+    let html = '';
+    let uploaded = 0;
+    let failed = 0;
+    for (const image of [...this.pendingImages()]) {
+      try {
+        const form = new FormData(); form.append('arquivo', image.file);
+        const result = await firstValueFrom(this.http.post<{id:number;url:string}>(`/api/demandas/${demandId}/anexos`, form));
+        const element = document.createElement('img'); element.src = result.url; element.alt = image.file.name;
+        html += element.outerHTML;
+        this.removePendingImage(image.id);
+        uploaded++;
+      } catch { failed++; }
+    }
+    return {html, uploaded, failed};
+  }
+
   async save() {
     if (this.busy()) return;
     if (!this.title.trim()) { this.error.set('Informe o título da demanda.'); return; }
@@ -233,27 +318,17 @@ export class App {
       const request = this.current() ? this.http.put<Demand>(`/api/demandas/${this.current()!.id}`, body) : this.http.post<Demand>('/api/demandas', body);
       let saved = await firstValueFrom(request);
       this.current.set(saved);
-      let uploaded = 0;
-      let failed = 0;
-      for (const image of [...this.pendingImages()]) {
-        try {
-          const form = new FormData(); form.append('arquivo', image.file);
-          const result = await firstValueFrom(this.http.post<{id:number;url:string}>(`/api/demandas/${saved.id}/anexos`, form));
-          const element = document.createElement('img'); element.src = result.url; element.alt = image.file.name;
-          this.editor?.nativeElement.append(element);
-          this.removePendingImage(image.id);
-          uploaded++;
-        } catch { failed++; }
-      }
-      if (uploaded) {
+      const uploads = await this.uploadPendingImages(saved.id);
+      if (uploads.uploaded) {
+        this.editor?.nativeElement.insertAdjacentHTML('beforeend', uploads.html);
         this.description = this.sanitizer.sanitize(SecurityContext.HTML, this.editor?.nativeElement.innerHTML ?? '') ?? '';
         saved = await firstValueFrom(this.http.put<Demand>(`/api/demandas/${saved.id}`, {...body, descricao: this.description}));
         this.current.set(saved);
         this.attachments.set(await firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${saved.id}/anexos`)));
       }
       await this.searchDemands();
-      if (failed) this.error.set(`${failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
-      else this.notice.set(uploaded ? 'Demanda e fotos salvas.' : 'Demanda salva.');
+      if (uploads.failed) this.error.set(`${uploads.failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
+      else this.notice.set(uploads.uploaded ? 'Demanda e fotos salvas.' : 'Demanda salva.');
     } catch (e) { this.error.set(this.errorText(e)); }
     finally { this.busy.set(false); }
   }
