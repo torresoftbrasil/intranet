@@ -38,7 +38,7 @@ jobs:
           docker build -f deploy/web.Dockerfile -t intranet-web:ci .
   deploy:
     needs: validate
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.HUB_DEPLOY_KNOWN_HOSTS != ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production

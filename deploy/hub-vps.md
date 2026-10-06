@@ -38,6 +38,8 @@ O registro A de `hub.engenize.com.br` deve apontar para `2.25.109.102`. Instalar
 
 O workflow `.github/workflows/pipeline.yml` testa e publica cada push na `main`. Criar uma chave SSH exclusiva para o Actions e instalá-la no `authorized_keys` do root com `restrict,command="/usr/local/sbin/engenize-hub-deploy-ssh"`. Instalar `deploy/ssh-entrypoint.sh` nesse caminho com modo 755. A chave só aceita `deploy <SHA completo>` e o release exige o HEAD atual da `main`.
 
+Até que `HUB_DEPLOY_KNOWN_HOSTS` seja configurada, o job de deploy fica pulado e o workflow apenas valida o código. Após cadastrar os dois valores abaixo, uma execução manual em Actions testa a publicação; pushes seguintes na `main` publicam automaticamente.
+
 No repositório GitHub, configurar:
 
 | Tipo | Nome | Valor |
