@@ -70,13 +70,14 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
 .hero h1 { margin: 0 0 36px; }
 .prompt-shell { background: $surface; border: 1px solid $line; border-radius: 2px; }
 .prompt-inner { padding: 16px; }
-.prompt-title { margin-bottom: 14px; color: #929292; font-size: 11px; }
-.prompt-title input:not([type=checkbox]) { min-height: 42px; color: #fff; background: #202020; border-color: #444; font-size: 14px; font-weight: 700; }
+.prompt-inner input.prompt-title { display: block; min-height: 42px; margin-bottom: 14px; color: #fff; background: #202020; border-color: #444; font-size: 14px; font-weight: 700; }
 .prompt-inner textarea { display: block; width: 100%; min-height: 100px; padding: 3px; resize: vertical; color: $text; background: none; border: 0; outline: 0; font-size: 15px; line-height: 1.55; }
 .prompt-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 13px; border-top: 1px solid $line; }
 .prompt-toolbar > span { color: #888; font-size: 11px; }
 .prompt-actions { display: flex; align-items: center; gap: 8px; }
-.prompt-responsible { width: 165px; min-height: 44px; }
+.prompt-select { min-height: 44px; font-size: 12px; font-weight: 700; }
+.prompt-status { width: 230px; }
+.prompt-responsible { width: 140px; }
 .upload-button { cursor: pointer; }
 .quick-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 15px; }
 .quick-actions button { padding: 10px 13px; color: #aaa; background: none; border: 1px solid $line; font-size: 11px; }
@@ -183,7 +184,9 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .prompt-toolbar { flex-wrap: wrap; }
   .prompt-toolbar > span { width: 100%; }
-  .prompt-actions { margin-left: auto; }
+  .prompt-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .prompt-actions .primary { grid-column: 1 / -1; }
+  .prompt-select { width: 100%; }
   .bulk-bar { width: 100%; }
   .bulk-bar select { width: 100%; }
 }
@@ -196,6 +199,4 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
   .section-actions { width: 100%; }
   .section-actions button { flex: 1; }
   .save-filter, .attachments-head { align-items: stretch; flex-direction: column; }
-  .prompt-actions { width: 100%; }
-  .prompt-actions > * { flex: 1; }
 }

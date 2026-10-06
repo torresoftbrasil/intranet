@@ -20,7 +20,7 @@ Se a porta 4200 já estiver ocupada, use `cd apps/web && npm start -- --port 420
 
 ## Uso
 
-- **Tela inicial** usa a barra central para criar uma demanda em dois passos: escreva o título e pressione Enter; ele aparece em uma caixa editável acima. Depois escreva os detalhes ou cole prints e pressione Enter novamente para salvar. O responsável pode ser escolhido ao lado do botão, com Arthur como padrão. `Ctrl+K` abre a busca e os atalhos de navegação.
+- **Tela inicial** cria a demanda sem abrir outro formulário: escreva o título e pressione Enter; ele aparece em uma caixa editável acima. Depois escreva os detalhes ou cole prints e pressione Enter novamente para salvar. Status e responsável ficam na barra inferior, iniciando em **Aguardando desenvolvimento** e **Arthur**. `Ctrl+K` abre a busca e os atalhos de navegação.
 - **Demandas** aparecem em cards. Use **Filtros** para combinar texto, status e responsável. Marque vários cards para trocar status e/ou responsável de uma só vez.
 - **Nova demanda** cria título, descrição, status e responsável. Na barra central ou na descrição, cole prints com **Ctrl+V**; também é possível usar **+ Imagem** ou **Inserir foto**. Uma prévia aparece antes de salvar, e as imagens são anexadas à demanda no salvamento. São aceitas imagens PNG/JPEG de até 10 MB cada.
 - **Painel** mostra contagens da lista exibida e seus filtros salvos. Ajuste os filtros no Painel ou na lista e salve a combinação com um nome. A navegação fica no menu do avatar.

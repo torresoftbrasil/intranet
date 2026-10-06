@@ -79,6 +79,7 @@ export class App {
   async signOut() {
     this.clearPendingImages();
     this.quickTitle = ''; this.quickTitleReady = false; this.commandText = ''; this.quickResponsible = '';
+    this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
     this.quickSavedId = null; this.quickImageHtml = '';
     await firstValueFrom(this.http.post('/api/logout', {}));
     this.me.set(null); this.current.set(null); this.demands.set([]);
@@ -104,10 +105,6 @@ export class App {
   }
   clearFilters() { this.search = ''; this.filterStatus = ''; this.filterPerson = ''; void this.searchDemands(); }
   statusLabel(value: string) { return statuses.find(item => item.value === value)?.label ?? value; }
-  openNew() {
-    this.current.set(null); this.title = ''; this.description = ''; this.status = 'AGUARDANDO_DESENVOLVIMENTO'; this.responsible = '';
-    this.attachments.set([]); this.error.set('');
-  }
   async open(demand: Demand) {
     this.error.set('');
     try {
@@ -127,6 +124,7 @@ export class App {
   commandText = '';
   quickTitle = '';
   quickTitleReady = false;
+  quickStatus: Status = 'AGUARDANDO_DESENVOLVIMENTO';
   quickResponsible = '';
   private quickSavedId: number | null = null;
   private quickImageHtml = '';
@@ -157,8 +155,10 @@ export class App {
       const title = text.replace(/^(criar|abrir|adicionar|nova)\s+(uma\s+)?(demanda|tarefa)(\s+de)?\s*/i, '').trim() || text;
       const match = title.match(/\s+para\s+(arthur|felipe)$/i);
       const person = match ? this.people().find(item => item.login === match[1].toLowerCase()) : undefined;
-      this.title = person ? title.slice(0, match!.index).trim() : title;
-      this.responsible = person ? String(person.id) : '';
+      this.quickTitle = (person ? title.slice(0, match!.index).trim() : title).slice(0, 180);
+      this.quickTitleReady = true;
+      this.quickResponsible = person ? String(person.id) : String(this.me()?.id ?? '');
+      setTimeout(() => this.promptInput?.nativeElement.focus());
     }
     this.paletteQuery = '';
   }
@@ -198,7 +198,7 @@ export class App {
     if (!this.quickTitle.trim()) { this.error.set('Escreva um título para a demanda.'); return; }
     this.busy.set(true); this.error.set('');
     const body = {titulo: this.quickTitle.trim(), descricao: this.promptDescription(),
-      status: 'AGUARDANDO_DESENVOLVIMENTO' as Status,
+      status: this.quickStatus,
       responsavelId: this.quickResponsible ? Number(this.quickResponsible) : null};
     try {
       const request = this.quickSavedId
@@ -218,6 +218,7 @@ export class App {
         this.notice.set('Demanda salva.');
         this.quickTitle = ''; this.quickTitleReady = false; this.commandText = '';
         this.quickSavedId = null; this.quickImageHtml = '';
+        this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
         this.quickResponsible = String(this.me()?.id ?? '');
         this.clearPendingImages();
       }
@@ -233,7 +234,7 @@ export class App {
   plainText(html: string | undefined) {
     return (html ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   }
-  editNew() { this.openNew(); this.editing.set(true); setTimeout(() => { if (this.editor) this.editor.nativeElement.innerHTML = ''; }); }
+  editNew() { this.navigate('demandas'); setTimeout(() => this.promptInput?.nativeElement.focus()); }
   async editExisting(demand: Demand) { await this.open(demand); this.editing.set(true); }
   closeEditor() { if (this.editing()) this.clearPendingImages(); this.editing.set(false); this.current.set(null); }
 
