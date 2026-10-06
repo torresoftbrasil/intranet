@@ -10,6 +10,7 @@ type Status = 'AGUARDANDO_DESENVOLVIMENTO' | 'EM_DESENVOLVIMENTO' | 'DESENVOLVIM
 type Person = { id: number; login: string; nome: string };
 type Demand = { id: number; titulo: string; descricao?: string; status: Status; responsavelId: number | ''; responsavel: string; criadoEm: string; atualizadoEm: string };
 type Attachment = { id: number; nome: string; tipo: string; tamanho: number };
+type PendingImage = { id: number; file: File; previewUrl: string };
 type SavedFilter = { id: number; nome: string; texto: string | null; status: Status | null; responsavelId: number | null };
 const statuses: {value: Status; label: string}[] = [
   {value: 'AGUARDANDO_DESENVOLVIMENTO', label: 'Aguardando desenvolvimento'},
@@ -32,6 +33,8 @@ export class App {
   people = signal<Person[]>([]);
   filters = signal<SavedFilter[]>([]);
   attachments = signal<Attachment[]>([]);
+  pendingImages = signal<PendingImage[]>([]);
+  private nextImageId = 0;
   selected = signal<number[]>([]);
   current = signal<Demand | null>(null);
   busy = signal(false);
@@ -69,6 +72,7 @@ export class App {
     finally { this.busy.set(false); }
   }
   async signOut() {
+    this.clearPendingImages();
     await firstValueFrom(this.http.post('/api/logout', {}));
     this.me.set(null); this.current.set(null); this.demands.set([]);
     await firstValueFrom(this.http.get('/api/csrf'));
@@ -98,6 +102,7 @@ export class App {
   async open(demand: Demand) {
     this.error.set('');
     try {
+      this.clearPendingImages();
       const full = await firstValueFrom(this.http.get<Demand>(`/api/demandas/${demand.id}`));
       this.current.set(full); this.title = full.titulo; this.description = full.descricao ?? '';
       this.status = full.status; this.responsible = full.responsavelId ? String(full.responsavelId) : '';
@@ -126,13 +131,13 @@ export class App {
   }
 
   useCommand(value = this.commandText) {
-    const text = value.trim(); if (!text) return;
+    const text = value.trim(); if (!text && !this.pendingImages().length) return;
     this.paletteOpen.set(false);
-    if (/^(buscar|pesquisar)\s+/i.test(text)) {
+    if (!this.pendingImages().length && /^(buscar|pesquisar)\s+/i.test(text)) {
       this.search = text.replace(/^(buscar|pesquisar)\s+/i, '');
       this.filtersOpen.set(true); this.navigate('demandas'); void this.searchDemands();
-    } else if (/^(ver\s+)?painel$/i.test(text)) { this.navigate('painel'); }
-    else if (/^(minhas demandas|meus itens)$/i.test(text)) { this.showMine(); }
+    } else if (!this.pendingImages().length && /^(ver\s+)?painel$/i.test(text)) { this.navigate('painel'); }
+    else if (!this.pendingImages().length && /^(minhas demandas|meus itens)$/i.test(text)) { this.showMine(); }
     else {
       this.editNew();
       const title = text.replace(/^(criar|abrir|adicionar|nova)\s+(uma\s+)?(demanda|tarefa)(\s+de)?\s*/i, '').trim() || text;
@@ -158,32 +163,95 @@ export class App {
   }
   editNew() { this.openNew(); this.editing.set(true); setTimeout(() => { if (this.editor) this.editor.nativeElement.innerHTML = ''; }); }
   async editExisting(demand: Demand) { await this.open(demand); this.editing.set(true); }
-  closeEditor() { this.editing.set(false); this.current.set(null); }
+  closeEditor() { if (this.editing()) this.clearPendingImages(); this.editing.set(false); this.current.set(null); }
+
+  pasteImages(event: ClipboardEvent) {
+    const images = Array.from(event.clipboardData?.items ?? [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile()).filter((file): file is File => !!file);
+    if (!images.length) return;
+    event.preventDefault();
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    if (text && event.target instanceof HTMLTextAreaElement) {
+      const input = event.target;
+      input.setRangeText(text, input.selectionStart, input.selectionEnd, 'end');
+      this.commandText = input.value;
+    } else if (text && event.target instanceof HTMLElement && event.target.isContentEditable) {
+      const selection = window.getSelection();
+      if (selection?.rangeCount) {
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        const node = document.createTextNode(text);
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+    this.addPendingImages(images);
+    if (this.editing() && this.current()) void this.save();
+  }
+
+  chooseImages(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.addPendingImages(Array.from(input.files ?? []));
+    input.value = '';
+    if (this.editing() && this.current() && this.pendingImages().length) void this.save();
+  }
+
+  removePendingImage(id: number) {
+    const image = this.pendingImages().find(item => item.id === id);
+    if (image) URL.revokeObjectURL(image.previewUrl);
+    this.pendingImages.update(items => items.filter(item => item.id !== id));
+  }
+
+  private clearPendingImages() {
+    for (const image of this.pendingImages()) URL.revokeObjectURL(image.previewUrl);
+    this.pendingImages.set([]);
+  }
+
+  private addPendingImages(files: File[]) {
+    const accepted = files.filter(file => ['image/png', 'image/jpeg'].includes(file.type) && file.size <= 10_000_000);
+    if (accepted.length !== files.length) this.error.set('Use imagens PNG ou JPEG de até 10 MB cada.');
+    if (accepted.length) this.pendingImages.update(items => [...items, ...accepted.map(file => ({
+      id: ++this.nextImageId, file, previewUrl: URL.createObjectURL(file)
+    }))]);
+  }
+
   async save() {
+    if (this.busy()) return;
     if (!this.title.trim()) { this.error.set('Informe o título da demanda.'); return; }
     this.description = this.sanitizer.sanitize(SecurityContext.HTML, this.editor?.nativeElement.innerHTML ?? '') ?? '';
     this.busy.set(true); this.error.set('');
     const body = {titulo: this.title, descricao: this.description, status: this.status, responsavelId: this.responsible ? Number(this.responsible) : null};
     try {
       const request = this.current() ? this.http.put<Demand>(`/api/demandas/${this.current()!.id}`, body) : this.http.post<Demand>('/api/demandas', body);
-      const saved = await firstValueFrom(request);
-      this.current.set(saved); this.notice.set('Demanda salva.'); await this.searchDemands();
+      let saved = await firstValueFrom(request);
+      this.current.set(saved);
+      let uploaded = 0;
+      let failed = 0;
+      for (const image of [...this.pendingImages()]) {
+        try {
+          const form = new FormData(); form.append('arquivo', image.file);
+          const result = await firstValueFrom(this.http.post<{id:number;url:string}>(`/api/demandas/${saved.id}/anexos`, form));
+          const element = document.createElement('img'); element.src = result.url; element.alt = image.file.name;
+          this.editor?.nativeElement.append(element);
+          this.removePendingImage(image.id);
+          uploaded++;
+        } catch { failed++; }
+      }
+      if (uploaded) {
+        this.description = this.sanitizer.sanitize(SecurityContext.HTML, this.editor?.nativeElement.innerHTML ?? '') ?? '';
+        saved = await firstValueFrom(this.http.put<Demand>(`/api/demandas/${saved.id}`, {...body, descricao: this.description}));
+        this.current.set(saved);
+        this.attachments.set(await firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${saved.id}/anexos`)));
+      }
+      await this.searchDemands();
+      if (failed) this.error.set(`${failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
+      else this.notice.set(uploaded ? 'Demanda e fotos salvas.' : 'Demanda salva.');
     } catch (e) { this.error.set(this.errorText(e)); }
     finally { this.busy.set(false); }
-  }
-  async upload(event: Event) {
-    const input = event.target as HTMLInputElement; const file = input.files?.[0]; const current = this.current();
-    if (!file || !current) { this.error.set('Salve a demanda antes de adicionar uma foto.'); return; }
-    const body = new FormData(); body.append('arquivo', file);
-    try {
-      const result = await firstValueFrom(this.http.post<{id:number;url:string}>(`/api/demandas/${current.id}/anexos`, body));
-      this.attachments.set(await firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${current.id}/anexos`)));
-      const image = document.createElement('img'); image.src = result.url; image.alt = file.name;
-      this.editor?.nativeElement.append(image);
-      await this.save();
-      this.notice.set('Foto inserida na demanda.');
-    } catch (e) { this.error.set(this.errorText(e)); }
-    finally { input.value = ''; }
   }
   async removeAttachment(attachment: Attachment) {
     const current = this.current(); if (!current) return;
