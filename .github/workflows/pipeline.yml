@@ -1,4 +1,4 @@
-name: Validar e publicar intranet
+name: Validar e publicar Hub Engenize
 on:
   push:
     branches: [main]
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: intranet-production
+  group: engenize-hub-production
   cancel-in-progress: false
 jobs:
   validate:
@@ -38,26 +38,24 @@ jobs:
           docker build -f deploy/web.Dockerfile -t intranet-web:ci .
   deploy:
     needs: validate
-    if: github.ref == 'refs/heads/main' && vars.INTRANET_DEPLOY_HOST != '' && vars.INTRANET_DEPLOY_PATH != ''
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
     steps:
       - name: Publicar por SSH
         env:
-          DEPLOY_KEY: ${{ secrets.INTRANET_DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ vars.INTRANET_DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ vars.INTRANET_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ vars.INTRANET_DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.INTRANET_DEPLOY_PATH }}
+          DEPLOY_KEY: ${{ secrets.HUB_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.HUB_DEPLOY_KNOWN_HOSTS }}
           DEPLOY_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS"
           install -d -m 700 ~/.ssh
-          trap 'rm -f ~/.ssh/intranet_deploy' EXIT
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/intranet_deploy
+          trap 'rm -f ~/.ssh/hub_deploy' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/hub_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/intranet_deploy ~/.ssh/known_hosts
-          ssh -i ~/.ssh/intranet_deploy -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && bash deploy/release.sh '$DEPLOY_SHA'"
+          chmod 600 ~/.ssh/hub_deploy ~/.ssh/known_hosts
+          ssh -i ~/.ssh/hub_deploy -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            root@2.25.109.102 "deploy $DEPLOY_SHA"

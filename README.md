@@ -27,9 +27,9 @@ Se a porta 4200 já estiver ocupada, use `cd apps/web && npm start -- --port 420
 
 ## Pipeline e publicação
 
-O workflow `.github/workflows/pipeline.yml` compila API e Angular e valida as imagens Docker a cada push em `main`. A etapa SSH só executa quando forem configurados `INTRANET_DEPLOY_HOST`, `INTRANET_DEPLOY_PATH`, `INTRANET_DEPLOY_USER`, `INTRANET_DEPLOY_KNOWN_HOSTS` e o secret `INTRANET_DEPLOY_SSH_KEY`. Assim, a pipeline está pronta sem presumir domínio ou servidor para a intranet.
+O Hub usa `hub.engenize.com.br` na VPS `2.25.109.102`, isolado da intranet já hospedada nela. O projeto Compose `engenize-hub` contém PostgreSQL, API e frontend. O banco e os uploads ficam em `/srv/torresoft-data/hub`; somente o frontend escuta em `127.0.0.1:8083`, atrás do Nginx com HTTPS. O checkout fica em `/opt/torresoft/apps/hub` e seu `.env` contém credenciais exclusivas, fora do Git. O procedimento operacional está em [deploy/hub-vps.md](deploy/hub-vps.md).
 
-No servidor, mantenha um clone do repositório no caminho escolhido e um `.env` na raiz. Defina `SESSION_COOKIE_SECURE=true`, `WEB_PORT` se 8084 estiver ocupada e, se necessário, `INTRANET_DATA_DIR`. A composição de produção expõe o frontend só em `127.0.0.1`; configure HTTPS e o virtual host no proxy externo antes de dar acesso aos usuários. `deploy/release.sh` faz backup do PostgreSQL, publica o SHA validado, testa `/healthz` e `/api/csrf` e tenta voltar à versão e ao banco anteriores se houver falha. Os backups e uploads devem entrar na rotina de backup externo quando a intranet for para a nuvem.
+O workflow `.github/workflows/pipeline.yml` testa API e Angular, valida as imagens Docker e publica o SHA da `main` por SSH. Ele usa o secret `HUB_DEPLOY_SSH_KEY` e a variable `HUB_DEPLOY_KNOWN_HOSTS`. `deploy/release.sh` faz backup do PostgreSQL antes de atualizar, testa `/healthz` e `/api/csrf` e tenta restaurar código e banco em caso de falha.
 
 ## Limites desta primeira versão
 

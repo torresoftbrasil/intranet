@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 TARGET_SHA="${1:?Informe o SHA da versão a publicar}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -8,8 +9,10 @@ test -f .env || { echo '.env não encontrado no servidor.' >&2; exit 1; }
 set -a
 source .env
 set +a
-DATA_DIR="${INTRANET_DATA_DIR:-/srv/torresoft-data/intranet}"
+DATA_DIR="${HUB_DATA_DIR:-/srv/torresoft-data/hub}"
 mkdir -p "$DATA_DIR/postgres" "$DATA_DIR/uploads" "$DATA_DIR/backups"
+exec 9>"$DATA_DIR/deploy.lock"
+flock -w 1800 9
 COMPOSE=(docker compose --env-file .env -f deploy/compose.yaml)
 OLD_SHA="$(git rev-parse HEAD)"
 BACKUP=""
@@ -43,19 +46,22 @@ if "${COMPOSE[@]}" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -Atqc 'SELE
   BACKUP="$DATA_DIR/backups/pre-${TARGET_SHA:0:12}-$(date -u +%Y%m%d%H%M%S).dump"
   "${COMPOSE[@]}" exec -T postgres pg_dump -Fc -U "$DB_USER" "$DB_NAME" > "$BACKUP"
   chmod 600 "$BACKUP"
+  test -s "$BACKUP"
+  "${COMPOSE[@]}" exec -T postgres pg_restore --list < "$BACKUP" >/dev/null
 fi
 git fetch origin main
 git cat-file -e "$TARGET_SHA^{commit}"
+test "$TARGET_SHA" = "$(git rev-parse origin/main)" || { echo 'SHA não é o HEAD atual da main.' >&2; exit 1; }
 git checkout --detach "$TARGET_SHA"
 RELEASE_STARTED=1
 "${COMPOSE[@]}" build api web
 MIGRATION_ATTEMPTED=1
 "${COMPOSE[@]}" up -d --remove-orphans
 for _ in {1..30}; do
-  if curl -fsS "http://127.0.0.1:${WEB_PORT:-8084}/healthz" >/dev/null && \
-     curl -fsS "http://127.0.0.1:${WEB_PORT:-8084}/api/csrf" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${WEB_PORT:-8083}/healthz" >/dev/null && \
+     curl -fsS "http://127.0.0.1:${WEB_PORT:-8083}/api/csrf" >/dev/null; then
     trap - EXIT
-    echo "Intranet publicada: $TARGET_SHA"
+    echo "Hub publicado: $TARGET_SHA"
     exit 0
   fi
   sleep 2
