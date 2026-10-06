@@ -61,7 +61,7 @@ public class DemandResource {
       @RequestParam(required=false) String status, @RequestParam(required=false) Long responsavelId) {
     if (status != null && !status.isBlank()) status(status);
     StringBuilder sql = new StringBuilder("""
-      SELECT d.id, d.titulo, d.status, d.responsavel_id AS "responsavelId", u.nome AS responsavel,
+      SELECT d.id, d.titulo, d.descricao, d.status, d.responsavel_id AS "responsavelId", u.nome AS responsavel,
         d.criado_em AS "criadoEm", d.atualizado_em AS "atualizadoEm"
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id WHERE 1=1
       """);

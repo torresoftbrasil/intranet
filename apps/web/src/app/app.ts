@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Component, ElementRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -24,6 +24,7 @@ export class App {
   private http = inject(HttpClient);
   private sanitizer = inject(DomSanitizer);
   @ViewChild('editor') editor?: ElementRef<HTMLDivElement>;
+  @ViewChild('paletteInput') paletteInput?: ElementRef<HTMLInputElement>;
   statuses = statuses;
   me = signal<Person | null>(null);
   page = signal<'demandas' | 'painel'>('demandas');
@@ -80,6 +81,7 @@ export class App {
     this.people.set(people); this.filters.set(filters); await this.searchDemands();
   }
   async searchDemands() {
+    this.selected.set([]);
     let params = new HttpParams();
     if (this.search.trim()) params = params.set('texto', this.search.trim());
     if (this.filterStatus) params = params.set('status', this.filterStatus);
@@ -105,6 +107,55 @@ export class App {
     } catch { this.error.set('Não foi possível abrir a demanda.'); }
   }
   editing = signal(false);
+  menuOpen = signal(false);
+  paletteOpen = signal(false);
+  filtersOpen = signal(false);
+  commandText = '';
+  paletteQuery = '';
+
+  @HostListener('document:keydown', ['$event'])
+  handleShortcut(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault(); this.menuOpen.set(false); this.paletteOpen.update(open => !open);
+      if (this.paletteOpen()) setTimeout(() => this.paletteInput?.nativeElement.focus());
+    } else if (event.key === 'Escape') { this.paletteOpen.set(false); this.menuOpen.set(false); }
+  }
+
+  navigate(page: 'demandas' | 'painel') {
+    this.page.set(page); this.closeEditor(); this.menuOpen.set(false); this.paletteOpen.set(false);
+  }
+
+  useCommand(value = this.commandText) {
+    const text = value.trim(); if (!text) return;
+    this.paletteOpen.set(false);
+    if (/^(buscar|pesquisar)\s+/i.test(text)) {
+      this.search = text.replace(/^(buscar|pesquisar)\s+/i, '');
+      this.filtersOpen.set(true); this.navigate('demandas'); void this.searchDemands();
+    } else if (/^(ver\s+)?painel$/i.test(text)) { this.navigate('painel'); }
+    else if (/^(minhas demandas|meus itens)$/i.test(text)) { this.showMine(); }
+    else {
+      this.editNew();
+      const title = text.replace(/^(criar|abrir|adicionar|nova)\s+(uma\s+)?(demanda|tarefa)(\s+de)?\s*/i, '').trim() || text;
+      const match = title.match(/\s+para\s+(arthur|felipe)$/i);
+      const person = match ? this.people().find(item => item.login === match[1].toLowerCase()) : undefined;
+      this.title = person ? title.slice(0, match!.index).trim() : title;
+      this.responsible = person ? String(person.id) : '';
+    }
+    this.commandText = ''; this.paletteQuery = '';
+  }
+
+  onCommandEnter(event: Event) {
+    if (!(event as KeyboardEvent).shiftKey) { event.preventDefault(); this.useCommand(); }
+  }
+
+  showMine() {
+    this.filterPerson = String(this.me()?.id ?? '');
+    this.filtersOpen.set(true); this.navigate('demandas'); void this.searchDemands();
+  }
+
+  plainText(html: string | undefined) {
+    return (html ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  }
   editNew() { this.openNew(); this.editing.set(true); setTimeout(() => { if (this.editor) this.editor.nativeElement.innerHTML = ''; }); }
   async editExisting(demand: Demand) { await this.open(demand); this.editing.set(true); }
   closeEditor() { this.editing.set(false); this.current.set(null); }
@@ -163,7 +214,7 @@ export class App {
   applyFilter(filter: SavedFilter) {
     this.search = filter.texto ?? ''; this.filterStatus = filter.status ?? '';
     this.filterPerson = filter.responsavelId ? String(filter.responsavelId) : '';
-    this.page.set('demandas'); void this.searchDemands();
+    this.filtersOpen.set(true); this.page.set('demandas'); void this.searchDemands();
   }
   async deleteFilter(filter: SavedFilter) {
     await firstValueFrom(this.http.delete(`/api/filtros/${filter.id}`));

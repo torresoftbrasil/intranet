@@ -1,76 +1,84 @@
 @if (!me()) {
   <main class="login-shell">
-    <form class="login-card" (ngSubmit)="signIn()">
-      <div class="brand-mark">T</div>
-      <p class="eyebrow">TORRESOFT</p>
-      <h1>Bem-vindo à intranet</h1>
-      <p class="muted">Entre para acompanhar as demandas da equipe.</p>
-      <label>Usuário<input name="login" [(ngModel)]="login" autocomplete="username" required></label>
-      <label>Senha<input name="password" [(ngModel)]="password" type="password" autocomplete="current-password" required></label>
-      @if (error()) { <p class="message error">{{ error() }}</p> }
-      <button class="primary full" [disabled]="busy()">Entrar</button>
+    <div class="ambient ambient--blue"></div><div class="ambient ambient--orange"></div>
+    <form class="login-card glow-frame" (ngSubmit)="signIn()">
+      <div class="login-inner">
+        <div class="login-brand"><span class="brand-mark">T</span><span>TORRESOFT <small>INTRANET</small></span></div>
+        <p class="eyebrow">SEU ESPAÇO DE TRABALHO</p>
+        <h1>Boas ideias começam aqui.</h1>
+        <p class="muted">Entre para transformar demandas em trabalho concluído.</p>
+        <div class="login-fields"><label>Usuário<input name="login" [(ngModel)]="login" autocomplete="username" required></label>
+        <label>Senha<input name="password" [(ngModel)]="password" type="password" autocomplete="current-password" required></label></div>
+        @if (error()) { <p class="message error">{{ error() }}</p> }
+        <button class="primary full" [disabled]="busy()">Entrar <span aria-hidden="true">↗</span></button>
+      </div>
     </form>
   </main>
 } @else {
   <div class="app-shell">
-    <aside class="sidebar">
-      <div class="sidebar-brand"><span class="brand-mark small">T</span><strong>Torresoft</strong><small>INTRANET</small></div>
-      <nav aria-label="Navegação principal">
-        <button [class.active]="page() === 'demandas'" (click)="page.set('demandas'); closeEditor()">Demandas</button>
-        <button [class.active]="page() === 'painel'" (click)="page.set('painel'); closeEditor()">Painel</button>
-      </nav>
-      <div class="sidebar-foot"><span class="avatar">{{ me()!.nome.slice(0, 1) }}</span><span>{{ me()!.nome }}</span><button class="signout" (click)="signOut()" title="Sair">Sair</button></div>
-    </aside>
+    <div class="ambient ambient--blue"></div><div class="ambient ambient--violet"></div><div class="ambient ambient--orange"></div>
+    <header class="topbar">
+      <button class="wordmark" (click)="navigate('demandas')" aria-label="Ir para demandas"><span class="brand-mark small">T</span><span>TORRESOFT <small>INTRANET</small></span></button>
+      <div class="top-actions">
+        <button class="shortcut" (click)="paletteOpen.set(true); menuOpen.set(false)"><span aria-hidden="true">⌕</span> Buscar ou criar <kbd>Ctrl K</kbd></button>
+        <div class="profile-wrap"><button class="profile-trigger" (click)="menuOpen.update(open => !open)" [attr.aria-expanded]="menuOpen()" aria-label="Abrir menu da conta"><span class="avatar">{{ me()!.nome.slice(0, 1) }}</span><span class="profile-name">{{ me()!.nome }}</span><span class="chevron">⌄</span></button>
+          @if (menuOpen()) { <div class="profile-menu"><p>ESPAÇO DE TRABALHO</p><button (click)="navigate('demandas')">Demandas</button><button (click)="navigate('painel')">Painel</button><button (click)="showMine()">Minhas demandas</button><hr><button (click)="signOut()">Sair da conta</button></div> }
+        </div>
+      </div>
+    </header>
     <main class="main-content">
-      @if (error()) { <div class="message error" role="alert">{{ error() }} <button (click)="error.set('')">×</button></div> }
-      @if (notice()) { <div class="message success" role="status">{{ notice() }} <button (click)="notice.set('')">×</button></div> }
+      @if (error()) { <div class="message error" role="alert">{{ error() }} <button (click)="error.set('')" aria-label="Fechar mensagem">×</button></div> }
+      @if (notice()) { <div class="message success" role="status">{{ notice() }} <button (click)="notice.set('')" aria-label="Fechar mensagem">×</button></div> }
       <ng-template #filterControls>
-        <section class="filter-card" aria-label="Filtros de demandas">
+        <section class="filter-card glass-card" aria-label="Filtros de demandas">
           <label>Buscar<input [(ngModel)]="search" (keyup.enter)="searchDemands()" placeholder="Título ou descrição"></label>
           <label>Status<select [(ngModel)]="filterStatus"><option value="">Todos</option>@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select></label>
           <label>Responsável<select [(ngModel)]="filterPerson"><option value="">Todos</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select></label>
-          <button class="secondary" (click)="searchDemands()">Filtrar</button><button class="text-button" (click)="clearFilters()">Limpar</button>
+          <button class="secondary" (click)="searchDemands()">Aplicar filtros</button><button class="text-button" (click)="clearFilters()">Limpar</button>
         </section>
       </ng-template>
       @if (editing()) {
-        <header class="page-head"><div><button class="text-button" (click)="closeEditor()">← Voltar às demandas</button><h1>{{ current() ? 'Editar demanda' : 'Nova demanda' }}</h1></div><button class="primary" (click)="save()" [disabled]="busy()">Salvar demanda</button></header>
-        <section class="editor-card">
-          <label>Título da demanda<input [(ngModel)]="title" maxlength="180" placeholder="Ex.: Ajustar a tela de clientes"></label>
-          <div class="form-row">
-            <label>Status<select [(ngModel)]="status">@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select></label>
-            <label>Responsável<select [(ngModel)]="responsible"><option value="">Sem responsável</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select></label>
-          </div>
-          <div class="editor-label">Descrição</div>
-          <p class="hint">Descreva a necessidade, cole texto e insira fotos entre os parágrafos.</p>
-          <div #editor class="rich-editor" contenteditable="true" role="textbox" aria-label="Descrição da demanda" aria-multiline="true" data-placeholder="Escreva aqui o que precisa ser feito..."></div>
-          <div class="attachments-head"><strong>Fotos</strong><label class="upload-button" [class.disabled]="!current()">+ Inserir foto<input type="file" accept="image/png,image/jpeg" (change)="upload($event)" [disabled]="!current()" hidden></label></div>
-          @if (!current()) { <p class="hint">Salve a demanda para habilitar as fotos.</p> }
-          @if (attachments().length) { <div class="attachments">@for (item of attachments(); track item.id) { <div class="attachment"><img [src]="'/api/demandas/' + current()!.id + '/anexos/' + item.id + '/arquivo'" [alt]="item.nome"><span>{{ item.nome }}</span><button (click)="removeAttachment(item)" [attr.aria-label]="'Remover ' + item.nome">×</button></div> }</div> }
+        <section class="editor-view">
+          <div class="editor-top"><button class="back-link" (click)="closeEditor()">← Voltar às demandas</button><span class="eyebrow">{{ current() ? 'DEMANDA #' + current()!.id : 'NOVA DEMANDA' }}</span></div>
+          <div class="page-heading"><div><h1>{{ current() ? 'Editar demanda' : 'Dar forma à ideia' }}</h1><p class="muted">Registre o contexto, escolha quem cuida e mantenha tudo em um lugar.</p></div><button class="primary" (click)="save()" [disabled]="busy()">Salvar demanda ↗</button></div>
+          <section class="editor-card glass-card">
+            <label>Título da demanda<input [(ngModel)]="title" maxlength="180" placeholder="O que precisa ser feito?"></label>
+            <div class="form-row"><label>Status<select [(ngModel)]="status">@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select></label>
+              <label>Responsável<select [(ngModel)]="responsible"><option value="">Sem responsável</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select></label></div>
+            <div class="editor-label">Descrição</div><p class="hint">Escreva livremente e acrescente fotos entre os parágrafos.</p>
+            <div #editor class="rich-editor" contenteditable="true" role="textbox" aria-label="Descrição da demanda" aria-multiline="true" data-placeholder="Conte o contexto, o resultado esperado e qualquer detalhe importante..."></div>
+            <div class="attachments-head"><div><strong>Fotos da demanda</strong><p class="hint">Imagens PNG ou JPEG, até 10 MB cada.</p></div><label class="upload-button" [class.disabled]="!current()">+ Inserir foto<input type="file" accept="image/png,image/jpeg" (change)="upload($event)" [disabled]="!current()" hidden></label></div>
+            @if (!current()) { <p class="hint">Salve a demanda para habilitar as fotos.</p> }
+            @if (attachments().length) { <div class="attachments">@for (item of attachments(); track item.id) { <div class="attachment"><img [src]="'/api/demandas/' + current()!.id + '/anexos/' + item.id + '/arquivo'" [alt]="item.nome"><span>{{ item.nome }}</span><button (click)="removeAttachment(item)" [attr.aria-label]="'Remover ' + item.nome">×</button></div> }</div> }
+          </section>
         </section>
       } @else if (page() === 'demandas') {
-        <header class="page-head"><div><p class="eyebrow">ESPAÇO DE TRABALHO</p><h1>Demandas</h1><p class="muted">Tudo o que está no radar da equipe, em um só lugar.</p></div><button class="primary" (click)="editNew()">+ Nova demanda</button></header>
-        <ng-container *ngTemplateOutlet="filterControls"></ng-container>
-        <div class="list-head"><span>{{ demands().length }} demanda(s)</span><button class="text-button" (click)="page.set('painel')">Ver painel →</button></div>
-        @if (selected().length) {
-          <section class="bulk-bar" aria-label="Ações em lote"><strong>{{ selected().length }} selecionada(s)</strong>
-            <select [(ngModel)]="bulkStatus" aria-label="Novo status"><option value="">Manter status</option>@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select>
-            <label class="bulk-check"><input type="checkbox" [(ngModel)]="bulkAssign"> Alterar responsável</label>
-            @if (bulkAssign) { <select [(ngModel)]="bulkPerson" aria-label="Novo responsável"><option value="">Sem responsável</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select> }
-            <button class="primary" (click)="applyBulk()" [disabled]="!bulkStatus && !bulkAssign">Aplicar</button>
-          </section>
-        }
-        <div class="table-wrap"><table><thead><tr><th class="select-col"><input type="checkbox" aria-label="Selecionar todas" [checked]="demands().length > 0 && selected().length === demands().length" (change)="toggleAll($any($event.target).checked)"></th><th>Demanda</th><th>Status</th><th>Responsável</th><th>Atualizada</th></tr></thead><tbody>
-          @for (demand of demands(); track demand.id) { <tr><td><input type="checkbox" [attr.aria-label]="'Selecionar demanda ' + demand.id" [checked]="selected().includes(demand.id)" (change)="toggle(demand.id, $any($event.target).checked)"></td><td><button class="demand-link" (click)="editExisting(demand)"><small>#{{ demand.id }}</small><strong>{{ demand.titulo }}</strong></button></td><td><span class="status-pill" [attr.data-status]="demand.status">{{ statusLabel(demand.status) }}</span></td><td>{{ demand.responsavel || 'Não atribuída' }}</td><td>{{ demand.atualizadoEm | date:'dd/MM/yyyy' }}</td></tr> }
-        </tbody></table>@if (!demands().length) { <div class="empty"><div class="empty-icon">✦</div><h2>Nenhuma demanda encontrada</h2><p>Crie uma demanda ou ajuste os filtros para começar.</p><button class="primary" (click)="editNew()">Criar demanda</button></div> }</div>
+        <section class="hero">
+          <div class="hero-orbit" aria-hidden="true"><span>✦</span></div>
+          <p class="eyebrow">WORKSPACE / DEMANDAS</p>
+          <h1>O que vamos construir <em>agora?</em></h1>
+          <p class="hero-subtitle">Comece com uma ideia. Organize os detalhes em seguida.</p>
+          <div class="prompt-shell glow-frame"><div class="prompt-inner"><textarea [(ngModel)]="commandText" (keydown.enter)="onCommandEnter($event)" rows="2" aria-label="Descreva uma nova demanda" placeholder="Ex.: Criar tarefa de manutenção na máquina 3..."></textarea>
+            <div class="prompt-toolbar"><span>Enter para revisar · Shift + Enter para nova linha</span><button class="primary" (click)="useCommand()" [disabled]="!commandText.trim()">Continuar <span aria-hidden="true">↗</span></button></div></div></div>
+          <div class="quick-actions"><button (click)="editNew()">+ Nova demanda</button><button (click)="showMine()">Minhas demandas</button><button (click)="navigate('painel')">Abrir painel ↗</button></div>
+        </section>
+        <section class="work-section"><div class="section-heading"><div><p class="eyebrow">ACOMPANHAMENTO</p><h2>Demandas em foco <span class="count-badge">{{ demands().length }}</span></h2></div><div class="section-actions"><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">⌕ &nbsp; Filtros</button><button class="ghost-button" (click)="navigate('painel')">Ver painel ↗</button></div></div>
+          @if (filtersOpen()) { <ng-container *ngTemplateOutlet="filterControls"></ng-container> }
+          @if (demands().length) { <div class="list-tools"><label><input type="checkbox" [checked]="selected().length === demands().length" (change)="toggleAll($any($event.target).checked)"> Selecionar todas</label><span>Atualizadas recentemente</span></div>
+            <div class="demand-grid">@for (demand of demands(); track demand.id) { <article class="demand-card glass-card" [class.is-selected]="selected().includes(demand.id)"><div class="card-top"><span class="card-id">DEMANDA #{{ demand.id }}</span><input type="checkbox" [attr.aria-label]="'Selecionar demanda ' + demand.id" [checked]="selected().includes(demand.id)" (change)="toggle(demand.id, $any($event.target).checked)"></div><button class="card-body" (click)="editExisting(demand)"><h3>{{ demand.titulo }}</h3><p>{{ plainText(demand.descricao) || 'Abra para adicionar mais detalhes à demanda.' }}</p></button><div class="card-bottom"><span class="status-pill" [attr.data-status]="demand.status">{{ statusLabel(demand.status) }}</span><span class="card-person"><span class="mini-avatar">{{ (demand.responsavel || '?').slice(0,1) }}</span>{{ demand.responsavel || 'Sem responsável' }}</span></div><div class="card-date">Atualizada em {{ demand.atualizadoEm | date:'dd/MM/yyyy' }}</div></article> }</div>
+          } @else { <div class="empty glass-card"><div class="empty-icon">✦</div><h3>Nenhuma demanda por aqui ainda</h3><p>Use a barra acima para começar ou ajuste os filtros.</p><button class="secondary" (click)="editNew()">Criar demanda ↗</button></div> }
+        </section>
+        @if (selected().length) { <section class="bulk-bar glass-card" aria-label="Ações em lote"><strong>{{ selected().length }} selecionada(s)</strong><select [(ngModel)]="bulkStatus" aria-label="Novo status"><option value="">Manter status</option>@for (item of statuses; track item.value) { <option [value]="item.value">{{ item.label }}</option> }</select><label class="bulk-check"><input type="checkbox" [(ngModel)]="bulkAssign"> Alterar responsável</label>@if (bulkAssign) { <select [(ngModel)]="bulkPerson" aria-label="Novo responsável"><option value="">Sem responsável</option>@for (person of people(); track person.id) { <option [value]="person.id">{{ person.nome }}</option> }</select> }<button class="primary" (click)="applyBulk()" [disabled]="!bulkStatus && !bulkAssign">Aplicar ações</button></section> }
       } @else {
-        <header class="page-head"><div><p class="eyebrow">VISÃO GERAL</p><h1>Painel</h1><p class="muted">Acompanhe o trabalho e abra suas visões salvas.</p></div></header>
-        <ng-container *ngTemplateOutlet="filterControls"></ng-container>
-        <div class="stats-grid"><div class="stat-card"><span>Demandas exibidas</span><strong>{{ demands().length }}</strong></div>@for (item of statuses; track item.value) { <button class="stat-card clickable" (click)="filterStatus = item.value; searchDemands(); page.set('demandas')"><span>{{ item.label }}</span><strong>{{ count(item.value) }}</strong></button> }</div>
-        <section class="panel-card"><div class="section-head"><div><h2>Meus filtros</h2><p>Salve combinações de busca, status e responsável.</p></div></div>
-          <div class="save-filter"><input [(ngModel)]="filterName" placeholder="Nome do filtro, ex.: Minhas demandas" aria-label="Nome do filtro"><button class="secondary" (click)="saveFilter()">Salvar filtro atual</button></div>
-          @if (filters().length) { <div class="saved-filters">@for (filter of filters(); track filter.id) { <div class="saved-filter"><button (click)="applyFilter(filter)"><strong>{{ filter.nome }}</strong><small>{{ filter.status ? statusLabel(filter.status) : 'Todos os status' }} · {{ filter.responsavelId ? 'Responsável definido' : 'Todos os responsáveis' }}</small></button><button class="remove-filter" (click)="deleteFilter(filter)" [attr.aria-label]="'Excluir filtro ' + filter.nome">×</button></div> }</div> } @else { <p class="hint">Você ainda não salvou filtros. Ajuste a lista de demandas e dê um nome a essa visão.</p> }
+        <section class="dashboard-hero"><p class="eyebrow">VISÃO GERAL</p><h1>O trabalho, com <em>clareza.</em></h1><p class="muted">Filtre, acompanhe e volte rapidamente às visões que importam.</p></section>
+        <div class="panel-filter-toggle"><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">⌕ &nbsp; Ajustar filtros</button><button class="ghost-button" (click)="navigate('demandas')">Todas as demandas ↗</button></div>
+        @if (filtersOpen()) { <ng-container *ngTemplateOutlet="filterControls"></ng-container> }
+        <div class="stats-grid"><div class="stat-card glass-card"><span>Demandas exibidas</span><strong>{{ demands().length }}</strong><small>no filtro atual</small></div>@for (item of statuses; track item.value) { <button class="stat-card glass-card clickable" (click)="filterStatus = item.value; searchDemands(); navigate('demandas')"><span>{{ item.label }}</span><strong>{{ count(item.value) }}</strong><small>abrir demandas ↗</small></button> }</div>
+        <section class="panel-card glass-card"><div class="section-heading"><div><p class="eyebrow">ACESSO RÁPIDO</p><h2>Meus filtros</h2><p class="muted">Salve combinações de busca, status e responsável.</p></div></div><div class="save-filter"><input [(ngModel)]="filterName" placeholder="Nome do filtro, ex.: Demandas em teste" aria-label="Nome do filtro"><button class="secondary" (click)="saveFilter()">Salvar filtro atual ↗</button></div>
+          @if (filters().length) { <div class="saved-filters">@for (filter of filters(); track filter.id) { <div class="saved-filter"><button (click)="applyFilter(filter)"><strong>{{ filter.nome }}</strong><small>{{ filter.status ? statusLabel(filter.status) : 'Todos os status' }} · {{ filter.responsavelId ? 'Responsável definido' : 'Todos os responsáveis' }}</small></button><button class="remove-filter" (click)="deleteFilter(filter)" [attr.aria-label]="'Excluir filtro ' + filter.nome">×</button></div> }</div> } @else { <p class="hint saved-empty">Nenhum filtro salvo ainda. Ajuste a visão e dê um nome a ela.</p> }
         </section>
       }
     </main>
+    @if (paletteOpen()) { <div class="palette-backdrop" (click)="paletteOpen.set(false)"><div class="palette glass-card" role="dialog" aria-label="Comandos rápidos" (click)="$event.stopPropagation()"><div class="palette-search"><span>⌕</span><input #paletteInput [(ngModel)]="paletteQuery" (keydown.enter)="useCommand(paletteQuery)" placeholder="Buscar, criar ou ir para..." aria-label="Comando rápido"><kbd>ESC</kbd></div><div class="palette-actions"><p>ATALHOS</p><button (click)="navigate('demandas')">◎ <span>Demandas</span><kbd>G D</kbd></button><button (click)="navigate('painel')">▦ <span>Painel</span><kbd>G P</kbd></button><button (click)="showMine()">◉ <span>Minhas demandas</span></button><button (click)="editNew(); paletteOpen.set(false)">＋ <span>Nova demanda</span></button></div></div></div> }
   </div>
 }

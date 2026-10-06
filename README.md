@@ -20,9 +20,10 @@ Se a porta 4200 já estiver ocupada, use `cd apps/web && npm start -- --port 420
 
 ## Uso
 
-- **Demandas** lista e filtra por texto, status e responsável. Abra uma linha para editar. Marque várias linhas para trocar status e/ou responsável de uma só vez.
+- **Tela inicial** usa a barra central para começar uma demanda. Digite uma frase e pressione Enter para revisar título e responsável antes de salvar. `Buscar termo` filtra a lista; `Painel` e `Minhas demandas` navegam diretamente. O atalho `Ctrl+K` abre os mesmos comandos.
+- **Demandas** aparecem em cards. Use **Filtros** para combinar texto, status e responsável. Marque vários cards para trocar status e/ou responsável de uma só vez.
 - **Nova demanda** cria título, descrição, status e responsável. Salve antes de adicionar fotos; depois, o botão **Inserir foto** posiciona a imagem ao final da descrição e salva automaticamente. São aceitas imagens PNG/JPEG de até 10 MB.
-- **Painel** mostra contagens da lista exibida e seus filtros salvos. Ajuste os filtros em Demandas, abra o Painel e salve a combinação com um nome.
+- **Painel** mostra contagens da lista exibida e seus filtros salvos. Ajuste os filtros no Painel ou na lista e salve a combinação com um nome. A navegação fica no menu do avatar.
 
 ## Pipeline e publicação
 
