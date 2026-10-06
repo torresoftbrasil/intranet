@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: intranet-api
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:intranet}
+    username: ${DB_USER:intranet}
+    password: ${DB_PASSWORD:}
+  flyway:
+    enabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+server:
+  port: ${APP_PORT:8083}
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${SESSION_COOKIE_SECURE:false}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+app:
+  uploads-dir: ${UPLOADS_DIR:../../data/uploads}
+  bootstrap:
+    arthur-password: ${ARTHUR_INITIAL_PASSWORD:}
+    felipe-password: ${FELIPE_INITIAL_PASSWORD:}

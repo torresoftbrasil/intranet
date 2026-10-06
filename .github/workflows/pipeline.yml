@@ -1,0 +1,63 @@
+name: Validar e publicar intranet
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: intranet-production
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '25'
+          cache: maven
+      - name: Compilar e testar API
+        working-directory: apps/api
+        run: ./mvnw -B verify
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Compilar frontend
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run build
+      - name: Validar imagens de publicação
+        run: |
+          docker build -f deploy/api.Dockerfile -t intranet-api:ci .
+          docker build -f deploy/web.Dockerfile -t intranet-web:ci .
+  deploy:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && vars.INTRANET_DEPLOY_HOST != '' && vars.INTRANET_DEPLOY_PATH != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - name: Publicar por SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.INTRANET_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.INTRANET_DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.INTRANET_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.INTRANET_DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.INTRANET_DEPLOY_PATH }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DEPLOY_USER"
+          install -d -m 700 ~/.ssh
+          trap 'rm -f ~/.ssh/intranet_deploy' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/intranet_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/intranet_deploy ~/.ssh/known_hosts
+          ssh -i ~/.ssh/intranet_deploy -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && bash deploy/release.sh '$DEPLOY_SHA'"

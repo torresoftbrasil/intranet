@@ -1,0 +1,8 @@
+.env
+data/uploads/*
+!data/uploads/.gitkeep
+apps/api/target/
+apps/web/node_modules/
+apps/web/dist/
+.DS_Store
+apps/web/.angular/

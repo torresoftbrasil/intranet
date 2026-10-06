@@ -1,0 +1,6 @@
+.git
+.env
+data/
+apps/api/target/
+apps/web/node_modules/
+apps/web/dist/

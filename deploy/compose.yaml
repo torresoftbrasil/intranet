@@ -1,0 +1,37 @@
+name: intranet
+services:
+  postgres:
+    image: postgres:18.4
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ${INTRANET_DATA_DIR:-/srv/torresoft-data/intranet}/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  api:
+    build: {context: .., dockerfile: deploy/api.Dockerfile}
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      APP_PORT: 8080
+      UPLOADS_DIR: /app/uploads
+      SESSION_COOKIE_SECURE: "true"
+    volumes:
+      - ${INTRANET_DATA_DIR:-/srv/torresoft-data/intranet}/uploads:/app/uploads
+    depends_on:
+      postgres: {condition: service_healthy}
+  web:
+    build: {context: .., dockerfile: deploy/web.Dockerfile}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8084}:80"
+    depends_on: [api]
