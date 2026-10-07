@@ -1,4 +1,4 @@
-import { Component, ElementRef, EventEmitter, HostListener, Input, OnDestroy, Output, ViewChild, forwardRef, inject } from '@angular/core';
+import { Component, ElementRef, HostListener, Input, OnDestroy, ViewChild, forwardRef, inject } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 
 export type HubOption = { value: string; label: string };
@@ -44,7 +44,6 @@ export type HubOption = { value: string; label: string };
     .select-option:hover, .select-option:focus-visible { background: #333; color: white; }
     .select-option[aria-selected=true] { background: #343434; color: white; }
     .select-check { color: #d4d4d4; }
-    :host(.kanban-move) .select-trigger { min-height: 34px; padding: 0 8px; font-size: 10px; }
     @keyframes menu-in { from { opacity: 0; transform: translateY(-5px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
     @media (prefers-reduced-motion: reduce) { .select-trigger, .select-chevron { transition: none; } .select-menu { animation: none; } }
   `],
@@ -54,9 +53,6 @@ export class HubSelect implements ControlValueAccessor, OnDestroy {
   @Input() options: HubOption[] = [];
   @Input() placeholder = 'Selecione';
   @Input() ariaLabel = 'Selecionar opção';
-  @Input() controlled = false;
-  @Input() displayValue = '';
-  @Output() selectionChange = new EventEmitter<string>();
   @ViewChild('trigger') trigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('menu') menu?: ElementRef<HTMLDivElement>;
   private host = inject(ElementRef<HTMLElement>);
@@ -73,7 +69,7 @@ export class HubSelect implements ControlValueAccessor, OnDestroy {
     if (!this.menu?.nativeElement.contains(event.target as Node)) this.close();
   };
 
-  get currentValue() { return this.controlled ? this.displayValue : this.value; }
+  get currentValue() { return this.value; }
   get selectedLabel() { return this.options.find(option => option.value === this.currentValue)?.label ?? ''; }
   writeValue(value: string | null) { this.value = value == null ? '' : String(value); }
   registerOnChange(fn: (value: string) => void) { this.onChange = fn; }
@@ -102,8 +98,8 @@ export class HubSelect implements ControlValueAccessor, OnDestroy {
     if (restoreFocus) setTimeout(() => this.trigger?.nativeElement.focus());
   }
   choose(value: string) {
-    if (this.controlled) this.selectionChange.emit(value);
-    else { this.value = value; this.onChange(value); }
+    this.value = value;
+    this.onChange(value);
     this.close(true);
   }
   onTriggerKeydown(event: KeyboardEvent) {

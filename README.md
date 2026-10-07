@@ -1,6 +1,6 @@
 # Intranet Torresoft
 
-Primeira versão de um espaço simples para Arthur e Felipe acompanharem demandas. Inclui login, criação e edição de demandas, descrição com texto e fotos, cinco status, responsável, ações em lote, filtros e painel com filtros pessoais salvos.
+Primeira versão de um espaço simples para Arthur e Felipe acompanharem demandas. Inclui login, criação e edição de demandas, descrição com texto e fotos, cinco etapas abertas e encerramento, responsável, ações em lote, filtros e painel com filtros pessoais salvos.
 
 ## Stack
 
@@ -21,8 +21,8 @@ Se a porta 4200 já estiver ocupada, use `cd apps/web && npm start -- --port 420
 ## Uso
 
 - **Tela inicial** cria a demanda sem abrir outro formulário: escreva o título e pressione Enter; ele aparece em uma caixa editável acima. Depois escreva os detalhes ou cole prints e pressione Enter novamente para salvar. Status e responsável ficam na barra inferior, iniciando em **Aguardando desenvolvimento** e **Arthur**. `Ctrl+K` abre a busca e os atalhos de navegação.
-- **Minhas demandas** abre um Kanban. Arraste os cards entre as baias para mudar o status. Ao mover para **Em teste**, o Hub sugere Felipe e abre um comentário que aceita prints colados. A lista geral continua com filtros e ações em lote.
-- **Demanda aberta** mantém título, descrição, status e responsável. Cole prints com **Ctrl+V** na descrição. Os comentários aparecem à direita, do mais recente para o mais antigo, com autor, data e imagens. O botão **+** adiciona um comentário. São aceitas imagens PNG/JPEG de até 10 MB cada.
+- **Kanban** reúne todas as pendências abertas, independentemente do responsável. Arraste os cards entre as baias para mudar o status. Ao mover para **Em teste**, o Hub sugere Felipe e abre um comentário que aceita prints colados. A lista geral continua com filtros e ações em lote.
+- **Demanda aberta** mantém título, descrição, status e responsável. O botão **Encerrar demanda** retira o item do Kanban; ele continua na lista geral com a data de encerramento guardada no banco. Cole prints com **Ctrl+V** na descrição. Os comentários aparecem à direita, do mais recente para o mais antigo, com autor, data e imagens. O botão **+** adiciona um comentário. São aceitas imagens PNG/JPEG de até 10 MB cada.
 - **Painel** mostra contagens da lista exibida e seus filtros salvos. Ajuste os filtros no Painel ou na lista e salve a combinação com um nome. A navegação fica no menu do avatar.
 
 ## Pipeline e publicação

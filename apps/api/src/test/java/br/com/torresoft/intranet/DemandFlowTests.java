@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,6 +21,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -30,6 +32,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class DemandFlowTests {
   @Container @ServiceConnection static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18.4");
   @Autowired MockMvc mvc;
+  @Autowired JdbcTemplate jdbc;
 
   @Test void criaFiltraEAlteraDemandaEmLote() throws Exception {
     mvc.perform(get("/api/demandas")).andExpect(status().isUnauthorized());
@@ -72,6 +75,22 @@ class DemandFlowTests {
       .andExpect(status().isOk()).andExpect(jsonPath("$.alteradas").value(1));
     mvc.perform(get("/api/demandas").with(user("arthur")).param("texto", "portal").param("status", "EM_TESTE"))
       .andExpect(status().isOk()).andExpect(jsonPath("$[0].responsavel").value("Felipe"));
+    mvc.perform(put("/api/demandas/" + id).with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"titulo\":\"Corrigir portal\",\"descricao\":\"Adicionar imagem\",\"status\":\"ENCERRADA\",\"responsavelId\":2}"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENCERRADA"));
+    mvc.perform(get("/api/demandas").with(user("felipe")).param("abertas", "true").param("texto", "portal"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$[0]").doesNotExist());
+    mvc.perform(get("/api/demandas").with(user("arthur")).param("status", "ENCERRADA"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id));
+    if (jdbc.queryForObject("SELECT encerrada_em IS NOT NULL FROM demanda WHERE id = ?", Boolean.class, id) != Boolean.TRUE)
+      throw new AssertionError("Demanda encerrada sem data de encerramento");
+    mvc.perform(put("/api/demandas/" + id).with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"titulo\":\"Corrigir portal\",\"descricao\":\"Adicionar imagem\",\"status\":\"REABERTA\",\"responsavelId\":2}"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("REABERTA"));
+    if (jdbc.queryForObject("SELECT encerrada_em IS NULL FROM demanda WHERE id = ?", Boolean.class, id) != Boolean.TRUE)
+      throw new AssertionError("Demanda reaberta ainda tem data de encerramento");
     mvc.perform(post("/api/demandas/lote").with(user("arthur")).with(csrf())
       .contentType(MediaType.APPLICATION_JSON)
       .content("{\"ids\":[999999],\"status\":\"REABERTA\",\"alterarResponsavel\":false}"))

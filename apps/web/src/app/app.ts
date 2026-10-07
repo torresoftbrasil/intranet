@@ -7,7 +7,7 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { SecurityContext } from '@angular/core';
 import { HubOption, HubSelect } from './hub-select';
 
-type Status = 'AGUARDANDO_DESENVOLVIMENTO' | 'EM_DESENVOLVIMENTO' | 'DESENVOLVIMENTO_EM_PROGRESSO' | 'EM_TESTE' | 'REABERTA';
+type Status = 'AGUARDANDO_DESENVOLVIMENTO' | 'EM_DESENVOLVIMENTO' | 'DESENVOLVIMENTO_EM_PROGRESSO' | 'EM_TESTE' | 'REABERTA' | 'ENCERRADA';
 type Person = { id: number; login: string; nome: string };
 type Demand = { id: number; titulo: string; descricao?: string; status: Status; responsavelId: number | ''; responsavel: string; criadoEm: string; atualizadoEm: string };
 type RecentDemand = Pick<Demand, 'id' | 'titulo' | 'responsavel' | 'criadoEm'>;
@@ -15,13 +15,14 @@ type Attachment = { id: number; nome: string; tipo: string; tamanho: number };
 type PendingImage = { id: number; file: File; previewUrl: string };
 type SavedFilter = { id: number; nome: string; texto: string | null; status: Status | null; responsavelId: number | null };
 type Comment = { id: number; texto: string; autor: string; criadoEm: string; imagens: {id: number; nome: string; url: string}[] };
-const statuses: {value: Status; label: string}[] = [
+const openStatuses: {value: Status; label: string}[] = [
   {value: 'AGUARDANDO_DESENVOLVIMENTO', label: 'Aguardando desenvolvimento'},
   {value: 'EM_DESENVOLVIMENTO', label: 'Em desenvolvimento'},
   {value: 'DESENVOLVIMENTO_EM_PROGRESSO', label: 'Desenvolvimento em progresso'},
   {value: 'EM_TESTE', label: 'Em teste'},
   {value: 'REABERTA', label: 'Reaberta'}
 ];
+const statuses: {value: Status; label: string}[] = [...openStatuses, {value: 'ENCERRADA', label: 'Encerrada'}];
 
 @Component({selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule, HubSelect], templateUrl: './app.html', styleUrl: './app.scss'})
 export class App {
@@ -31,8 +32,11 @@ export class App {
   @ViewChild('paletteInput') paletteInput?: ElementRef<HTMLInputElement>;
   @ViewChild('promptInput') promptInput?: ElementRef<HTMLTextAreaElement>;
   statuses = statuses;
+  openStatuses = openStatuses;
   statusOptions: HubOption[] = statuses;
+  quickStatusOptions: HubOption[] = openStatuses;
   filterStatusOptions: HubOption[] = [{value: '', label: 'Todos os status'}, ...statuses];
+  kanbanStatusOptions: HubOption[] = [{value: '', label: 'Todos os status'}, ...openStatuses];
   bulkStatusOptions: HubOption[] = [{value: '', label: 'Manter status'}, ...statuses];
   me = signal<Person | null>(null);
   page = signal<'inicio' | 'demandas' | 'painel'>('inicio');
@@ -124,6 +128,7 @@ export class App {
     if (this.search.trim()) params = params.set('texto', this.search.trim());
     if (this.filterStatus) params = params.set('status', this.filterStatus);
     if (this.filterPerson) params = params.set('responsavelId', this.filterPerson);
+    if (this.listMode() === 'kanban') params = params.set('abertas', 'true');
     try { this.demands.set(await firstValueFrom(this.http.get<Demand[]>('/api/demandas', {params}))); }
     catch { this.error.set('Não foi possível carregar as demandas.'); }
   }
@@ -169,6 +174,10 @@ export class App {
   }
 
   navigate(page: 'inicio' | 'demandas' | 'painel') {
+    if (page === 'painel' && this.listMode() === 'kanban') {
+      this.listMode.set('cards'); this.search = ''; this.filterStatus = ''; this.filterPerson = '';
+      void this.searchDemands();
+    }
     this.page.set(page); this.closeEditor(); this.menuOpen.set(false); this.paletteOpen.set(false);
   }
 
@@ -176,10 +185,11 @@ export class App {
     const text = value.trim(); if (!text) return;
     this.paletteOpen.set(false);
     if (/^(buscar|pesquisar)\s+/i.test(text)) {
+      this.listMode.set('cards');
       this.search = text.replace(/^(buscar|pesquisar)\s+/i, '');
       this.filtersOpen.set(true); this.navigate('demandas'); void this.searchDemands();
     } else if (/^(ver\s+)?painel$/i.test(text)) { this.navigate('painel'); }
-    else if (/^(minhas demandas|meus itens)$/i.test(text)) { this.showMine(); }
+    else if (/^(kanban|pendências|minhas demandas|meus itens)$/i.test(text)) { this.showKanban(); }
     else {
       this.editNew();
       const title = text.replace(/^(criar|abrir|adicionar|nova)\s+(uma\s+)?(demanda|tarefa)(\s+de)?\s*/i, '').trim() || text;
@@ -256,9 +266,9 @@ export class App {
     finally { this.busy.set(false); }
   }
 
-  showMine() {
+  showKanban() {
     this.search = ''; this.filterStatus = '';
-    this.filterPerson = String(this.me()?.id ?? '');
+    this.filterPerson = '';
     this.listMode.set('kanban');
     this.filtersOpen.set(false); this.navigate('demandas'); void this.searchDemands();
   }
@@ -270,7 +280,9 @@ export class App {
   }
 
   plainText(html: string | undefined) {
-    return (html ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const spaced = (html ?? '').replace(/<(?:br|\/p|\/div|\/li)\b[^>]*>/gi, ' ');
+    return (new DOMParser().parseFromString(spaced, 'text/html').body.textContent ?? '')
+      .replace(/\s+/g, ' ').trim();
   }
   openedAt(value: string) {
     const date = new Date(value);
@@ -424,10 +436,6 @@ export class App {
     if (demand) this.requestStatusChange(demand, status);
   }
 
-  selectKanbanStatus(demand: Demand, value: string) {
-    if (statuses.some(item => item.value === value)) this.requestStatusChange(demand, value as Status);
-  }
-
   requestStatusChange(demand: Demand, status: Status) {
     if (status === demand.status || this.busy()) return;
     if (status === 'EM_TESTE') {
@@ -492,9 +500,9 @@ export class App {
     return {html, uploaded, failed};
   }
 
-  async save() {
-    if (this.busy()) return;
-    if (!this.title.trim()) { this.error.set('Informe o título da demanda.'); return; }
+  async save(): Promise<boolean> {
+    if (this.busy()) return false;
+    if (!this.title.trim()) { this.error.set('Informe o título da demanda.'); return false; }
     this.description = this.sanitizer.sanitize(SecurityContext.HTML, this.editor?.nativeElement.innerHTML ?? '') ?? '';
     this.busy.set(true); this.error.set('');
     const body = {titulo: this.title, descricao: this.description, status: this.status, responsavelId: this.responsible ? Number(this.responsible) : null};
@@ -511,10 +519,23 @@ export class App {
         this.attachments.set(await firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${saved.id}/anexos`)));
       }
       await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
-      if (uploads.failed) this.error.set(`${uploads.failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
-      else this.notice.set(uploads.uploaded ? 'Demanda e fotos salvas.' : 'Demanda salva.');
-    } catch (e) { this.error.set(this.errorText(e)); }
+      if (uploads.failed) {
+        this.error.set(`${uploads.failed} imagem(ns) não puderam ser anexadas. Tente salvar novamente.`);
+        return false;
+      }
+      this.notice.set(uploads.uploaded ? 'Demanda e fotos salvas.' : 'Demanda salva.');
+      return true;
+    } catch (e) { this.error.set(this.errorText(e)); return false; }
     finally { this.busy.set(false); }
+  }
+  async closeDemand() {
+    if (!this.current() || this.busy()) return;
+    if (this.pendingImages().length && !await this.save()) return;
+    this.status = 'ENCERRADA';
+    if (await this.save()) {
+      this.notice.set('Demanda encerrada.');
+      this.closeEditor();
+    }
   }
   async removeAttachment(attachment: Attachment) {
     const current = this.current(); if (!current) return;
@@ -544,6 +565,7 @@ export class App {
     } catch (e) { this.error.set(this.errorText(e)); }
   }
   applyFilter(filter: SavedFilter) {
+    this.listMode.set('cards');
     this.search = filter.texto ?? ''; this.filterStatus = filter.status ?? '';
     this.filterPerson = filter.responsavelId ? String(filter.responsavelId) : '';
     this.filtersOpen.set(true); this.page.set('demandas'); void this.searchDemands();

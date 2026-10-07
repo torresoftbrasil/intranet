@@ -13,13 +13,13 @@
     </form>
   </main>
 } @else {
-  <div class="app-shell">
+  <div class="app-shell" [class.kanban-shell]="!editing() && page() === 'demandas' && listMode() === 'kanban'">
     <header class="topbar">
       <button class="wordmark" (click)="navigate('inicio')" aria-label="Ir para o início">Hub.</button>
       <div class="top-actions">
         <button class="shortcut" (click)="paletteOpen.set(true); menuOpen.set(false)">Buscar ou criar <kbd>Ctrl K</kbd></button>
         <div class="profile-wrap"><button class="profile-trigger" (click)="menuOpen.update(open => !open)" [attr.aria-expanded]="menuOpen()" aria-label="Abrir menu da conta"><span class="avatar">{{ me()!.nome.slice(0, 1) }}</span><span class="profile-name">{{ me()!.nome }}</span><span class="chevron">⌄</span></button>
-          @if (menuOpen()) { <div class="profile-menu"><p>ESPAÇO DE TRABALHO</p><button (click)="navigate('inicio')">Início</button><button (click)="showAll()">Todas as demandas</button><button (click)="showMine()">Minhas demandas</button><button (click)="navigate('painel')">Painel</button><hr><button (click)="signOut()">Sair da conta</button></div> }
+          @if (menuOpen()) { <div class="profile-menu"><p>ESPAÇO DE TRABALHO</p><button (click)="navigate('inicio')">Início</button><button (click)="showAll()">Todas as demandas</button><button (click)="showKanban()">Kanban</button><button (click)="navigate('painel')">Painel</button><hr><button (click)="signOut()">Sair da conta</button></div> }
         </div>
       </div>
     </header>
@@ -29,7 +29,7 @@
       <ng-template #filterControls>
         <section class="filter-card glass-card" aria-label="Filtros de demandas">
           <label>Buscar<input [(ngModel)]="search" (keyup.enter)="searchDemands()" placeholder="Título ou descrição"></label>
-          <label>Status<hub-select [(ngModel)]="filterStatus" [options]="filterStatusOptions" ariaLabel="Filtrar por status" /></label>
+          <label>Status<hub-select [(ngModel)]="filterStatus" [options]="listMode() === 'kanban' ? kanbanStatusOptions : filterStatusOptions" ariaLabel="Filtrar por status" /></label>
           <label>Responsável<hub-select [(ngModel)]="filterPerson" [options]="filterPersonOptions()" ariaLabel="Filtrar por responsável" /></label>
           <button class="secondary" (click)="searchDemands()">Aplicar filtros</button><button class="text-button" (click)="clearFilters()">Limpar</button>
         </section>
@@ -37,7 +37,7 @@
       @if (editing()) {
         <section class="editor-view">
           <div class="editor-top"><button class="back-link" (click)="closeEditor()">{{ page() === 'inicio' ? '← Início' : page() === 'painel' ? '← Painel' : '← Demandas' }}</button><span class="eyebrow">{{ current() ? 'DEMANDA #' + current()!.id : 'NOVA DEMANDA' }}</span></div>
-          <div class="page-heading"><h1>{{ current() ? 'Editar demanda.' : 'Nova demanda.' }}</h1><button class="primary" (click)="save()" [disabled]="busy()">Salvar demanda →</button></div>
+          <div class="page-heading"><h1>{{ current() ? 'Editar demanda.' : 'Nova demanda.' }}</h1><div class="editor-actions">@if (current() && current()!.status !== 'ENCERRADA') { <button class="secondary close-demand" (click)="closeDemand()" [disabled]="busy()">Encerrar demanda</button> }<button class="primary" (click)="save()" [disabled]="busy()">Salvar demanda →</button></div></div>
           <div class="editor-layout">
             <section class="editor-card glass-card">
               <label>Título da demanda<input [(ngModel)]="title" maxlength="180" placeholder="O que precisa ser feito?"></label>
@@ -73,8 +73,8 @@
             @if (quickTitleReady) { <input class="prompt-title" [(ngModel)]="quickTitle" (keydown.enter)="focusPrompt($event)" maxlength="180" aria-label="Título da demanda" placeholder="Título"> }
             <textarea #promptInput [(ngModel)]="commandText" (keydown.enter)="onPromptEnter($event)" (paste)="pasteImages($event)" rows="2" [attr.aria-label]="quickTitleReady ? 'Descrição da nova demanda' : 'Título da nova demanda'" [placeholder]="quickTitleReady ? 'Descreva a demanda ou cole um print...' : 'Digite o título da demanda...'"></textarea>
             @if (pendingImages().length) { <div class="pending-images" aria-label="Imagens prontas para anexar">@for (image of pendingImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removePendingImage(image.id)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div> }
-            <div class="prompt-toolbar"><span>{{ quickTitleReady ? 'Enter para salvar · Shift + Enter para nova linha' : 'Enter para incluir título' }}</span><div class="prompt-actions"><hub-select class="prompt-status" [(ngModel)]="quickStatus" [options]="statusOptions" ariaLabel="Status da nova demanda" /><hub-select class="prompt-responsible" [(ngModel)]="quickResponsible" [options]="personOptions()" ariaLabel="Responsável da nova demanda" /><button class="primary" (click)="advancePrompt()" [disabled]="busy() || (!quickTitleReady && !commandText.trim())">{{ quickTitleReady ? 'Salvar demanda →' : 'Incluir título →' }}</button></div></div></div></div>
-          <div class="quick-actions"><button (click)="showMine()">Minhas demandas</button><button (click)="showAll()">Todas as demandas →</button><button (click)="navigate('painel')">Painel →</button></div>
+            <div class="prompt-toolbar"><span>{{ quickTitleReady ? 'Enter para salvar · Shift + Enter para nova linha' : 'Enter para incluir título' }}</span><div class="prompt-actions"><hub-select class="prompt-status" [(ngModel)]="quickStatus" [options]="quickStatusOptions" ariaLabel="Status da nova demanda" /><hub-select class="prompt-responsible" [(ngModel)]="quickResponsible" [options]="personOptions()" ariaLabel="Responsável da nova demanda" /><button class="primary" (click)="advancePrompt()" [disabled]="busy() || (!quickTitleReady && !commandText.trim())">{{ quickTitleReady ? 'Salvar demanda →' : 'Incluir título →' }}</button></div></div></div></div>
+          <div class="quick-actions"><button (click)="showKanban()">Kanban</button><button (click)="showAll()">Todas as demandas →</button><button (click)="navigate('painel')">Painel →</button></div>
         </section>
         <section class="recent-section" aria-label="Demandas abertas recentemente">
           <div class="recent-heading"><h2>Abertas recentemente</h2><span>Suas últimas 10 demandas</span></div>
@@ -90,17 +90,17 @@
         </section>
         </div>
       } @else if (page() === 'demandas') {
-        <section class="work-section list-view" [class.kanban-view]="listMode() === 'kanban'"><div class="section-heading"><div><button class="back-link" (click)="navigate('inicio')">← Início</button><h1>{{ listMode() === 'kanban' ? 'Minhas demandas.' : 'Demandas.' }}</h1></div><div class="section-actions"><button class="ghost-button" (click)="editNew()">+ Nova demanda</button><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">Filtros</button><button class="ghost-button" (click)="navigate('painel')">Painel →</button></div></div>
+        <section class="work-section list-view" [class.kanban-view]="listMode() === 'kanban'"><div class="section-heading"><div><button class="back-link" (click)="navigate('inicio')">← Início</button><h1>{{ listMode() === 'kanban' ? 'Pendências.' : 'Demandas.' }}</h1></div><div class="section-actions"><button class="ghost-button" (click)="editNew()">+ Nova demanda</button><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">Filtros</button><button class="ghost-button" (click)="navigate('painel')">Painel →</button></div></div>
           @if (filtersOpen()) { <ng-container *ngTemplateOutlet="filterControls"></ng-container> }
           @if (listMode() === 'kanban') {
             <div class="kanban-board" aria-label="Kanban de demandas">
-              @for (lane of statuses; track lane.value) {
+              @for (lane of openStatuses; track lane.value) {
                 <section class="kanban-lane" (dragover)="allowDrop($event)" (drop)="dropDemand($event, lane.value)">
                   <div class="kanban-lane-heading"><h2>{{ lane.label }}</h2><span>{{ laneDemands(lane.value).length }}</span></div>
                   <div class="kanban-cards">@for (demand of laneDemands(lane.value); track demand.id) {
                     <article class="kanban-card" draggable="true" (dragstart)="startDrag($event, demand)">
                       <button class="kanban-card-body" (click)="editExisting(demand)"><strong>{{ demand.titulo }}</strong><span>{{ plainText(demand.descricao) || 'Sem descrição' }}</span></button>
-                      <div class="kanban-card-footer"><small>{{ demand.responsavel || 'Sem responsável' }}</small><hub-select class="kanban-move" [controlled]="true" [displayValue]="demand.status" (selectionChange)="selectKanbanStatus(demand, $event)" [options]="statusOptions" [ariaLabel]="'Mover ' + demand.titulo" /></div>
+                      <div class="kanban-card-footer"><small>{{ demand.responsavel || 'Sem responsável' }}</small></div>
                     </article>
                   } @empty { <p class="kanban-empty">Arraste uma demanda para cá</p> }</div>
                 </section>
@@ -134,6 +134,6 @@
         </section>
       </div>
     }
-    @if (paletteOpen()) { <div class="palette-backdrop" (click)="paletteOpen.set(false)"><div class="palette glass-card" role="dialog" aria-label="Comandos rápidos" (click)="$event.stopPropagation()"><div class="palette-search"><input #paletteInput [(ngModel)]="paletteQuery" (keydown.enter)="useCommand(paletteQuery)" placeholder="Buscar, criar ou ir para..." aria-label="Comando rápido"><kbd>ESC</kbd></div><div class="palette-actions"><p>ATALHOS</p><button (click)="navigate('inicio')"><span>Início</span></button><button (click)="showAll()"><span>Todas as demandas</span><kbd>G D</kbd></button><button (click)="navigate('painel')"><span>Painel</span><kbd>G P</kbd></button><button (click)="showMine()"><span>Minhas demandas</span></button><button (click)="editNew(); paletteOpen.set(false)"><span>Nova demanda</span></button></div></div></div> }
+    @if (paletteOpen()) { <div class="palette-backdrop" (click)="paletteOpen.set(false)"><div class="palette glass-card" role="dialog" aria-label="Comandos rápidos" (click)="$event.stopPropagation()"><div class="palette-search"><input #paletteInput [(ngModel)]="paletteQuery" (keydown.enter)="useCommand(paletteQuery)" placeholder="Buscar, criar ou ir para..." aria-label="Comando rápido"><kbd>ESC</kbd></div><div class="palette-actions"><p>ATALHOS</p><button (click)="navigate('inicio')"><span>Início</span></button><button (click)="showAll()"><span>Todas as demandas</span><kbd>G D</kbd></button><button (click)="navigate('painel')"><span>Painel</span><kbd>G P</kbd></button><button (click)="showKanban()"><span>Kanban</span></button><button (click)="editNew(); paletteOpen.set(false)"><span>Nova demanda</span></button></div></div></div> }
   </div>
 }

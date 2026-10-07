@@ -19,7 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api")
 public class DemandResource {
-  private static final List<String> STATUSES = List.of("AGUARDANDO_DESENVOLVIMENTO", "EM_DESENVOLVIMENTO", "DESENVOLVIMENTO_EM_PROGRESSO", "EM_TESTE", "REABERTA");
+  private static final List<String> STATUSES = List.of("AGUARDANDO_DESENVOLVIMENTO", "EM_DESENVOLVIMENTO", "DESENVOLVIMENTO_EM_PROGRESSO", "EM_TESTE", "REABERTA", "ENCERRADA");
   private final JdbcTemplate jdbc;
   private final NamedParameterJdbcTemplate named;
   DemandResource(JdbcTemplate jdbc, NamedParameterJdbcTemplate named) { this.jdbc = jdbc; this.named = named; }
@@ -58,7 +58,8 @@ public class DemandResource {
   }
 
   @GetMapping("/demandas") List<Map<String,Object>> list(@RequestParam(required=false) String texto,
-      @RequestParam(required=false) String status, @RequestParam(required=false) Long responsavelId) {
+      @RequestParam(required=false) String status, @RequestParam(required=false) Long responsavelId,
+      @RequestParam(defaultValue="false") boolean abertas) {
     if (status != null && !status.isBlank()) status(status);
     StringBuilder sql = new StringBuilder("""
       SELECT d.id, d.titulo, d.descricao, d.status, d.responsavel_id AS "responsavelId", u.nome AS responsavel,
@@ -69,6 +70,7 @@ public class DemandResource {
     if (texto != null && !texto.isBlank()) { sql.append(" AND (lower(d.titulo) LIKE :texto OR lower(d.descricao) LIKE :texto)"); params.addValue("texto", "%" + texto.toLowerCase().trim() + "%"); }
     if (status != null && !status.isBlank()) { sql.append(" AND d.status = :status"); params.addValue("status", status); }
     if (responsavelId != null) { sql.append(" AND d.responsavel_id = :responsavel"); params.addValue("responsavel", responsavelId); }
+    if (abertas) sql.append(" AND d.status <> 'ENCERRADA'");
     sql.append(" ORDER BY d.atualizado_em DESC, d.id DESC LIMIT 500");
     return named.queryForList(sql.toString(), params);
   }
@@ -99,10 +101,12 @@ public class DemandResource {
   @PutMapping("/demandas/{id}") @Transactional
   Map<String,Object> update(@PathVariable long id, @Valid @RequestBody DemandInput input) {
     getDemand(id); responsible(input.responsavelId());
+    String newStatus = status(input.status());
     jdbc.update("""
       UPDATE demanda SET titulo = ?, descricao = ?, status = ?, responsavel_id = ?,
+        encerrada_em = CASE WHEN ? = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END,
         atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1 WHERE id = ?
-      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), status(input.status()), input.responsavelId(), id);
+      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, input.responsavelId(), newStatus, id);
     return getDemand(id);
   }
 
@@ -117,7 +121,8 @@ public class DemandResource {
     MapSqlParameterSource params = new MapSqlParameterSource().addValue("ids", input.ids()).addValue("status", input.status()).addValue("responsavel", input.responsavelId());
     Integer count = named.queryForObject("SELECT count(*) FROM demanda WHERE id IN (:ids)", params, Integer.class);
     if (count == null || count != input.ids().stream().distinct().count()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Seleção contém demanda inexistente");
-    String set = (input.status() != null ? "status = :status, " : "") + (input.alterarResponsavel() ? "responsavel_id = :responsavel, " : "") + "atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1";
+    String set = (input.status() != null ? "status = :status, encerrada_em = CASE WHEN :status = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END, " : "")
+      + (input.alterarResponsavel() ? "responsavel_id = :responsavel, " : "") + "atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1";
     int updated = named.update("UPDATE demanda SET " + set + " WHERE id IN (:ids)", params);
     return Map.of("alteradas", updated);
   }
