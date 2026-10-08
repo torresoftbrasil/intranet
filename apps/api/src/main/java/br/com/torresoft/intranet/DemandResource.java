@@ -96,15 +96,15 @@ public class DemandResource {
 
   @PostMapping("/demandas") @ResponseStatus(HttpStatus.CREATED) @Transactional
   Map<String,Object> create(@Valid @RequestBody DemandInput input, Principal principal) {
-    boolean destined = Boolean.TRUE.equals(input.destinadaIa());
-    if (!destined) responsible(input.responsavelId());
-    String value = destined ? "DESENVOLVIMENTO_EM_PROGRESSO" : input.status() == null ? STATUSES.getFirst() : status(input.status());
+    if (Boolean.TRUE.equals(input.destinadaIa()))
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Use o menu do card para destinar à IA");
+    responsible(input.responsavelId());
+    String value = input.status() == null ? STATUSES.getFirst() : status(input.status());
     Long id = jdbc.queryForObject("""
       INSERT INTO demanda(titulo, descricao, status, responsavel_id, criado_por_id, destinada_ia, ia_estado)
       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
       """, Long.class, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), value,
-      destined ? zyvenId() : input.responsavelId(), userId(principal), destined,
-      destined ? "PENDENTE" : null);
+      input.responsavelId(), userId(principal), false, null);
     events.publishAfterCommit("created", List.of(id), principal.getName());
     return getDemand(id);
   }
@@ -112,11 +112,11 @@ public class DemandResource {
   @PutMapping("/demandas/{id}") @Transactional
   Map<String,Object> update(@PathVariable long id, @Valid @RequestBody DemandInput input, Principal principal) {
     Map<String,Object> existing = getDemand(id);
-    boolean destined = input.destinadaIa() == null ? (boolean) existing.get("destinadaIa") : input.destinadaIa();
-    boolean becameDestined = destined && !(boolean) existing.get("destinadaIa");
-    if (!becameDestined) responsible(input.responsavelId());
-    String newStatus = becameDestined ? "DESENVOLVIMENTO_EM_PROGRESSO" : status(input.status());
-    Long newResponsible = becameDestined ? zyvenId() : input.responsavelId();
+    boolean destined = (boolean) existing.get("destinadaIa");
+    if (input.destinadaIa() != null && input.destinadaIa() != destined)
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Use o menu do card para destinar à IA");
+    responsible(input.responsavelId());
+    String newStatus = status(input.status());
     jdbc.update("""
       UPDATE demanda SET titulo = ?, descricao = ?, status = ?, responsavel_id = ?,
         encerrada_em = CASE WHEN ? = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END,
@@ -126,7 +126,7 @@ public class DemandResource {
         ia_reservada_em = CASE WHEN ? = FALSE THEN NULL ELSE ia_reservada_em END,
         ia_concluida_em = CASE WHEN ? = FALSE THEN NULL ELSE ia_concluida_em END,
         atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1 WHERE id = ?
-      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, newResponsible, newStatus,
+      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, input.responsavelId(), newStatus,
       destined, destined, destined, destined, destined, id);
     events.publishAfterCommit("updated", List.of(id), principal.getName());
     return getDemand(id);
@@ -134,6 +134,8 @@ public class DemandResource {
 
   @PostMapping("/demandas/{id}/destinar-ia") @Transactional
   Map<String,Object> sendToAi(@PathVariable long id, Principal principal) {
+    if (!"arthur".equals(principal.getName()))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente Arthur pode destinar demandas à IA");
     Long zyvenId = zyvenId();
     int changed = jdbc.update("""
       UPDATE demanda SET destinada_ia = TRUE, ia_estado = 'PENDENTE', ia_resultado = NULL,

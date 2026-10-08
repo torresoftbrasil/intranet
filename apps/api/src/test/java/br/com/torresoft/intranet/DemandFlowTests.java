@@ -41,16 +41,28 @@ class DemandFlowTests {
   @Test @Transactional void filaIaIncluiContextoEEsperaRevisaoHumana() throws Exception {
     mvc.perform(get("/api/ia/demandas")).andExpect(status().isUnauthorized());
     mvc.perform(get("/api/ia/demandas").with(user("arthur"))).andExpect(status().isUnauthorized());
+    mvc.perform(post("/api/demandas").with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"titulo\":\"Tentativa direta\",\"destinadaIa\":true}"))
+      .andExpect(status().isBadRequest());
     String created = mvc.perform(post("/api/demandas").with(user("arthur")).with(csrf())
       .contentType(MediaType.APPLICATION_JSON)
-      .content("{\"titulo\":\"Demanda para IA\",\"descricao\":\"<p>Detalhes</p>\",\"destinadaIa\":true}"))
-      .andExpect(status().isCreated()).andExpect(jsonPath("$.iaEstado").value("PENDENTE"))
-      .andExpect(jsonPath("$.status").value("DESENVOLVIMENTO_EM_PROGRESSO"))
-      .andExpect(jsonPath("$.responsavel").value("Zyven"))
+      .content("{\"titulo\":\"Demanda para IA\",\"descricao\":\"<p>Detalhes</p>\"}"))
+      .andExpect(status().isCreated()).andExpect(jsonPath("$.destinadaIa").value(false))
       .andReturn().getResponse().getContentAsString();
     var matcher = Pattern.compile("\"id\"\\s*:\\s*(\\d+)").matcher(created);
     if (!matcher.find()) throw new AssertionError("Resposta sem id: " + created);
     long id = Long.parseLong(matcher.group(1));
+    mvc.perform(put("/api/demandas/" + id).with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"titulo\":\"Demanda para IA\",\"status\":\"AGUARDANDO_DESENVOLVIMENTO\",\"destinadaIa\":true}"))
+      .andExpect(status().isBadRequest());
+    mvc.perform(post("/api/demandas/" + id + "/destinar-ia").with(user("felipe")).with(csrf()))
+      .andExpect(status().isForbidden());
+    mvc.perform(post("/api/demandas/" + id + "/destinar-ia").with(user("arthur")).with(csrf()))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.iaEstado").value("PENDENTE"))
+      .andExpect(jsonPath("$.status").value("DESENVOLVIMENTO_EM_PROGRESSO"))
+      .andExpect(jsonPath("$.responsavel").value("Zyven"));
     String second = mvc.perform(post("/api/demandas").with(user("arthur")).with(csrf())
       .contentType(MediaType.APPLICATION_JSON).content("{\"titulo\":\"Outra demanda\"}"))
       .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();

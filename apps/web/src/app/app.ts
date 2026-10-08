@@ -94,7 +94,6 @@ export class App implements OnDestroy {
   description = '';
   status: Status = 'AGUARDANDO_DESENVOLVIMENTO';
   responsible = '';
-  destinedAi = false;
   commentDraft = '';
   testComment = '';
   testResponsible = '';
@@ -135,7 +134,7 @@ export class App implements OnDestroy {
     this.seenDemandIds.clear();
     this.clearPendingImages();
     this.clearImageList(this.commentImages); this.clearImageList(this.testImages);
-    this.quickTitle = ''; this.quickTitleReady = false; this.commandText = ''; this.quickResponsible = ''; this.quickDestinedAi = false;
+    this.quickTitle = ''; this.quickTitleReady = false; this.commandText = ''; this.quickResponsible = '';
     this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
     this.quickSavedId = null; this.quickImageHtml = '';
     await firstValueFrom(this.http.post('/api/logout', {}));
@@ -355,7 +354,6 @@ export class App implements OnDestroy {
       const full = await firstValueFrom(this.http.get<Demand>(`/api/demandas/${demand.id}`));
       this.current.set(full); this.title = full.titulo; this.description = full.descricao ?? '';
       this.status = full.status; this.responsible = full.responsavelId ? String(full.responsavelId) : '';
-      this.destinedAi = full.destinadaIa;
       const [attachments, comments] = await Promise.all([
         firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${demand.id}/anexos`)),
         firstValueFrom(this.http.get<Comment[]>(`/api/demandas/${demand.id}/comentarios`))
@@ -373,7 +371,6 @@ export class App implements OnDestroy {
   quickTitleReady = false;
   quickStatus: Status = 'AGUARDANDO_DESENVOLVIMENTO';
   quickResponsible = '';
-  quickDestinedAi = false;
   private quickSavedId: number | null = null;
   private quickImageHtml = '';
   paletteQuery = '';
@@ -458,8 +455,7 @@ export class App implements OnDestroy {
     this.busy.set(true); this.error.set('');
     const body = {titulo: this.quickTitle.trim(), descricao: this.promptDescription(),
       status: this.quickStatus,
-      responsavelId: this.quickResponsible ? Number(this.quickResponsible) : null,
-      destinadaIa: this.quickDestinedAi};
+      responsavelId: this.quickResponsible ? Number(this.quickResponsible) : null};
     try {
       const request = this.quickSavedId
         ? this.http.put<Demand>(`/api/demandas/${this.quickSavedId}`, body)
@@ -480,7 +476,6 @@ export class App implements OnDestroy {
         this.quickSavedId = null; this.quickImageHtml = '';
         this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
         this.quickResponsible = String(this.me()?.id ?? '');
-        this.quickDestinedAi = false;
         this.clearPendingImages();
       }
     } catch (e) { this.error.set(this.errorText(e)); }
@@ -706,6 +701,7 @@ export class App implements OnDestroy {
   laneDemands(status: Status) { return this.demands().filter(item => item.status === status).sort((a, b) => Number(a.destinadaIa) - Number(b.destinadaIa)); }
 
   openCardMenu(event: MouseEvent, demand: Demand) {
+    if (this.me()?.login !== 'arthur') return;
     event.preventDefault();
     this.cardMenu.set({demand, x: Math.max(8, Math.min(event.clientX, innerWidth - 200)),
       y: Math.max(8, Math.min(event.clientY, innerHeight - 70))});
@@ -714,7 +710,7 @@ export class App implements OnDestroy {
   async sendCardToAi() {
     const demand = this.cardMenu()?.demand;
     this.cardMenu.set(null);
-    if (!demand || demand.destinadaIa || this.busy()) return;
+    if (this.me()?.login !== 'arthur' || !demand || demand.destinadaIa || this.busy()) return;
     this.busy.set(true); this.error.set('');
     try {
       await firstValueFrom(this.http.post<Demand>(`/api/demandas/${demand.id}/destinar-ia`, {}));
@@ -810,7 +806,7 @@ export class App implements OnDestroy {
     this.description = this.sanitizer.sanitize(SecurityContext.HTML, this.editor?.nativeElement.innerHTML ?? '') ?? '';
     this.busy.set(true); this.error.set('');
     const body = {titulo: this.title, descricao: this.description, status: this.status,
-      responsavelId: this.responsible ? Number(this.responsible) : null, destinadaIa: this.destinedAi};
+      responsavelId: this.responsible ? Number(this.responsible) : null};
     try {
       const request = this.current() ? this.http.put<Demand>(`/api/demandas/${this.current()!.id}`, body) : this.http.post<Demand>('/api/demandas', body);
       let saved = await firstValueFrom(request);
