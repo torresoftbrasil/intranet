@@ -41,3 +41,22 @@ input:not([type=checkbox]):not([type=file]):focus, textarea:focus, .rich-editor:
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+.new-demand-notice { display: flex; align-items: center; gap: 10px; padding: 10px 13px; margin-top: 18px; color: #dce9df; background: #1a261f; border: 1px solid #3e5b48; border-radius: 8px; font-size: 12px; animation: panel-appear .25s ease; }
+.new-demand-icon { color: #9bc8a6; font-size: 14px; }
+.new-demand-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; white-space: nowrap; }
+.new-demand-actions button { padding: 4px 6px; color: #bdd5c2; background: transparent; border: 0; font-size: 11px; font-weight: 700; }
+.new-demand-actions button:last-child { font-size: 18px; line-height: 1; }
+@media (max-width: 600px) { .new-demand-notice { flex-wrap: wrap; } .new-demand-actions { width: 100%; justify-content: flex-end; } }
+.app-shell .card-context-menu { position: fixed; z-index: 40; width: 190px; padding: 5px; color: #eee; background: #202020; border: 1px solid #5c4b72; border-radius: 5px; box-shadow: 0 14px 35px #000b; }
+.app-shell .card-context-menu button { width: 100%; padding: 10px; color: #e1d2f8; background: transparent; border: 0; text-align: left; font-size: 12px; font-weight: 600; }
+.app-shell .card-context-menu button:hover:not(:disabled), .app-shell .card-context-menu button:focus-visible { background: #352943; }
+.app-shell .card-context-menu button:disabled { color: #888; cursor: default; }
+.app-shell .ai-result { margin-bottom: 25px; padding: 14px; background: #211b2b; border: 1px solid #5a4a70; white-space: pre-wrap; overflow-wrap: anywhere; }
+.app-shell .ai-result h2 { margin: 0 0 10px; color: #d8c6fb; font-size: 12px; }
+.app-shell .ai-result p { margin: 0; color: #ddd; font-size: 12px; line-height: 1.5; }
+.app-shell .kanban-card.is-ai { border-left: 3px solid #a98de0; }
+.app-shell .kanban-card:focus-visible { outline: 2px solid #d8c6fb; outline-offset: 2px; }
+.app-shell .kanban-ai-label { display: inline-block; margin: 0 0 8px 5px; padding: 3px 6px; color: #d8c6fb; background: #322743; border: 1px solid #604b7c; border-radius: 2px; font-size: 10px; font-weight: 700; }
+.app-shell .ai-destination { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 18px; color: #ddd; font-size: 12px; font-weight: 600; cursor: pointer; }
+.app-shell .ai-destination input { accent-color: #a98de0; }
+.app-shell .quick-ai { margin: 0; white-space: nowrap; }

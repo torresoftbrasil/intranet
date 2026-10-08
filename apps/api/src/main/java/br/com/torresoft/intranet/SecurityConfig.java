@@ -1,10 +1,22 @@
 package br.com.torresoft.intranet;
 
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.List;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -13,6 +25,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,7 +42,30 @@ public class SecurityConfig {
       .orElseThrow(() -> new UsernameNotFoundException("Usuário não encontrado"));
   }
 
-  @Bean SecurityFilterChain security(HttpSecurity http) throws Exception {
+  @Bean @Order(1) SecurityFilterChain aiSecurity(HttpSecurity http, @Value("${app.ai-token:}") String token) throws Exception {
+    return http.securityMatcher("/api/ia/**")
+      .csrf(csrf -> csrf.disable())
+      .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+      .authorizeHttpRequests(auth -> auth.anyRequest().hasRole("AI"))
+      .addFilterBefore(new OncePerRequestFilter() {
+        @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+          String header = request.getHeader("Authorization");
+          String supplied = header != null && header.startsWith("Bearer ") ? header.substring(7) : "";
+          if (token.isBlank() || supplied.isBlank() || !MessageDigest.isEqual(
+              token.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8))) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+          }
+          org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("hub-ai", null, List.of(() -> "ROLE_AI")));
+          chain.doFilter(request, response);
+        }
+      }, UsernamePasswordAuthenticationFilter.class)
+      .build();
+  }
+
+  @Bean @Order(2) SecurityFilterChain security(HttpSecurity http) throws Exception {
     return http
       .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))

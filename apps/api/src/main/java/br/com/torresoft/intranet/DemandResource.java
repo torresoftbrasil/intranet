@@ -22,9 +22,12 @@ public class DemandResource {
   private static final List<String> STATUSES = List.of("AGUARDANDO_DESENVOLVIMENTO", "EM_DESENVOLVIMENTO", "DESENVOLVIMENTO_EM_PROGRESSO", "EM_TESTE", "REABERTA", "ENCERRADA");
   private final JdbcTemplate jdbc;
   private final NamedParameterJdbcTemplate named;
-  DemandResource(JdbcTemplate jdbc, NamedParameterJdbcTemplate named) { this.jdbc = jdbc; this.named = named; }
+  private final DemandEvents events;
+  DemandResource(JdbcTemplate jdbc, NamedParameterJdbcTemplate named, DemandEvents events) {
+    this.jdbc = jdbc; this.named = named; this.events = events;
+  }
 
-  record DemandInput(@NotBlank @Size(max=180) String titulo, String descricao, String status, Long responsavelId) {}
+  record DemandInput(@NotBlank @Size(max=180) String titulo, String descricao, String status, Long responsavelId, Boolean destinadaIa) {}
   record BulkInput(@NotEmpty List<Long> ids, String status, Long responsavelId, boolean alterarResponsavel) {}
   record FilterInput(@NotBlank @Size(max=80) String nome, String texto, String status, Long responsavelId) {}
 
@@ -39,17 +42,21 @@ public class DemandResource {
     if (id != null && jdbc.queryForObject("SELECT count(*) FROM usuario WHERE id = ? AND ativo", Integer.class, id) == 0)
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Responsável inválido");
   }
+  private Long zyvenId() { return jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'zyven' AND ativo", Long.class); }
   private Map<String,Object> getDemand(long id) {
     return jdbc.query("""
       SELECT d.id, d.titulo, d.descricao, d.status, d.responsavel_id AS "responsavelId",
-        u.nome AS responsavel, d.criado_em AS "criadoEm", d.atualizado_em AS "atualizadoEm", d.versao
+        u.nome AS responsavel, d.criado_em AS "criadoEm", d.atualizado_em AS "atualizadoEm", d.versao,
+        d.destinada_ia AS "destinadaIa", d.ia_estado AS "iaEstado", d.ia_resultado AS "iaResultado"
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id WHERE d.id = ?
-      """, (rs, row) -> Map.<String,Object>of(
-        "id", rs.getLong("id"), "titulo", rs.getString("titulo"), "descricao", rs.getString("descricao"),
-        "status", rs.getString("status"), "responsavelId", rs.getObject("responsavelId") == null ? "" : rs.getLong("responsavelId"),
-        "responsavel", rs.getString("responsavel") == null ? "" : rs.getString("responsavel"),
-        "criadoEm", rs.getObject("criadoEm", OffsetDateTime.class).toString(),
-        "atualizadoEm", rs.getObject("atualizadoEm", OffsetDateTime.class).toString(), "versao", rs.getLong("versao")), id)
+      """, (rs, row) -> Map.<String,Object>ofEntries(
+        Map.entry("id", rs.getLong("id")), Map.entry("titulo", rs.getString("titulo")), Map.entry("descricao", rs.getString("descricao")),
+        Map.entry("status", rs.getString("status")), Map.entry("responsavelId", rs.getObject("responsavelId") == null ? "" : rs.getLong("responsavelId")),
+        Map.entry("responsavel", rs.getString("responsavel") == null ? "" : rs.getString("responsavel")),
+        Map.entry("criadoEm", rs.getObject("criadoEm", OffsetDateTime.class).toString()),
+        Map.entry("atualizadoEm", rs.getObject("atualizadoEm", OffsetDateTime.class).toString()), Map.entry("versao", rs.getLong("versao")),
+        Map.entry("destinadaIa", rs.getBoolean("destinadaIa")), Map.entry("iaEstado", rs.getString("iaEstado") == null ? "" : rs.getString("iaEstado")),
+        Map.entry("iaResultado", rs.getString("iaResultado") == null ? "" : rs.getString("iaResultado"))), id)
       .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Demanda não encontrada"));
   }
 
@@ -63,7 +70,8 @@ public class DemandResource {
     if (status != null && !status.isBlank()) status(status);
     StringBuilder sql = new StringBuilder("""
       SELECT d.id, d.titulo, d.descricao, d.status, d.responsavel_id AS "responsavelId", u.nome AS responsavel,
-        d.criado_em AS "criadoEm", d.atualizado_em AS "atualizadoEm"
+        d.criado_em AS "criadoEm", d.atualizado_em AS "atualizadoEm",
+        d.destinada_ia AS "destinadaIa", d.ia_estado AS "iaEstado"
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id WHERE 1=1
       """);
     MapSqlParameterSource params = new MapSqlParameterSource();
@@ -88,30 +96,59 @@ public class DemandResource {
 
   @PostMapping("/demandas") @ResponseStatus(HttpStatus.CREATED) @Transactional
   Map<String,Object> create(@Valid @RequestBody DemandInput input, Principal principal) {
-    responsible(input.responsavelId());
-    String value = input.status() == null ? STATUSES.getFirst() : status(input.status());
+    boolean destined = Boolean.TRUE.equals(input.destinadaIa());
+    if (!destined) responsible(input.responsavelId());
+    String value = destined ? "DESENVOLVIMENTO_EM_PROGRESSO" : input.status() == null ? STATUSES.getFirst() : status(input.status());
     Long id = jdbc.queryForObject("""
-      INSERT INTO demanda(titulo, descricao, status, responsavel_id, criado_por_id)
-      VALUES (?, ?, ?, ?, ?) RETURNING id
+      INSERT INTO demanda(titulo, descricao, status, responsavel_id, criado_por_id, destinada_ia, ia_estado)
+      VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
       """, Long.class, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), value,
-      input.responsavelId(), userId(principal));
+      destined ? zyvenId() : input.responsavelId(), userId(principal), destined,
+      destined ? "PENDENTE" : null);
+    events.publishAfterCommit("created", List.of(id), principal.getName());
     return getDemand(id);
   }
 
   @PutMapping("/demandas/{id}") @Transactional
-  Map<String,Object> update(@PathVariable long id, @Valid @RequestBody DemandInput input) {
-    getDemand(id); responsible(input.responsavelId());
-    String newStatus = status(input.status());
+  Map<String,Object> update(@PathVariable long id, @Valid @RequestBody DemandInput input, Principal principal) {
+    Map<String,Object> existing = getDemand(id);
+    boolean destined = input.destinadaIa() == null ? (boolean) existing.get("destinadaIa") : input.destinadaIa();
+    boolean becameDestined = destined && !(boolean) existing.get("destinadaIa");
+    if (!becameDestined) responsible(input.responsavelId());
+    String newStatus = becameDestined ? "DESENVOLVIMENTO_EM_PROGRESSO" : status(input.status());
+    Long newResponsible = becameDestined ? zyvenId() : input.responsavelId();
     jdbc.update("""
       UPDATE demanda SET titulo = ?, descricao = ?, status = ?, responsavel_id = ?,
         encerrada_em = CASE WHEN ? = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END,
+        destinada_ia = ?,
+        ia_estado = CASE WHEN ? THEN COALESCE(ia_estado, 'PENDENTE') ELSE NULL END,
+        ia_resultado = CASE WHEN ? = FALSE THEN NULL ELSE ia_resultado END,
+        ia_reservada_em = CASE WHEN ? = FALSE THEN NULL ELSE ia_reservada_em END,
+        ia_concluida_em = CASE WHEN ? = FALSE THEN NULL ELSE ia_concluida_em END,
         atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1 WHERE id = ?
-      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, input.responsavelId(), newStatus, id);
+      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, newResponsible, newStatus,
+      destined, destined, destined, destined, destined, id);
+    events.publishAfterCommit("updated", List.of(id), principal.getName());
+    return getDemand(id);
+  }
+
+  @PostMapping("/demandas/{id}/destinar-ia") @Transactional
+  Map<String,Object> sendToAi(@PathVariable long id, Principal principal) {
+    Long zyvenId = zyvenId();
+    int changed = jdbc.update("""
+      UPDATE demanda SET destinada_ia = TRUE, ia_estado = 'PENDENTE', ia_resultado = NULL,
+        ia_reservada_em = NULL, ia_concluida_em = NULL,
+        status = 'DESENVOLVIMENTO_EM_PROGRESSO', responsavel_id = ?,
+        atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1
+      WHERE id = ? AND NOT destinada_ia AND status <> 'ENCERRADA'
+      """, zyvenId, id);
+    if (changed == 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "Demanda não está disponível para IA");
+    events.publishAfterCommit("updated", List.of(id), principal.getName());
     return getDemand(id);
   }
 
   @PostMapping("/demandas/lote") @Transactional
-  Map<String,Integer> bulk(@Valid @RequestBody BulkInput input) {
+  Map<String,Integer> bulk(@Valid @RequestBody BulkInput input, Principal principal) {
     if (input.ids().size() > 500 || input.ids().stream().anyMatch(id -> id == null || id < 1))
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seleção inválida");
     if (input.status() == null && !input.alterarResponsavel())
@@ -124,6 +161,7 @@ public class DemandResource {
     String set = (input.status() != null ? "status = :status, encerrada_em = CASE WHEN :status = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END, " : "")
       + (input.alterarResponsavel() ? "responsavel_id = :responsavel, " : "") + "atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1";
     int updated = named.update("UPDATE demanda SET " + set + " WHERE id IN (:ids)", params);
+    events.publishAfterCommit("updated", input.ids(), principal.getName());
     return Map.of("alteradas", updated);
   }
 

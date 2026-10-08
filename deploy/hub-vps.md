@@ -28,6 +28,8 @@ chmod 600 /etc/hub/backup.key
 
 Criar `/opt/torresoft/apps/hub/.env` com permissão 600. Usar `DB_NAME=hub`, `DB_USER=hub`, senha aleatória exclusiva, `ARTHUR_INITIAL_PASSWORD` e `FELIPE_INITIAL_PASSWORD` distintos com pelo menos 12 caracteres, `SESSION_COOKIE_SECURE=true`, `HUB_DATA_DIR=/srv/torresoft-data/hub` e `WEB_PORT=8083`. As senhas iniciais só são usadas para criar contas ausentes. Guardá-las em gerenciador de senhas; não imprimir em logs ou versionar.
 
+Para a integração com a máquina do Engenize, gerar um segredo exclusivo com `openssl rand -hex 32` e configurá-lo como `HUB_AI_TOKEN` no mesmo `.env`. Guardar a cópia cliente fora do repositório, em `~/.config/engenize/hub-ai-token` com modo `600`. A chave SSH existente não autentica a API HTTPS. O token vazio desabilita o acesso à rota `/api/ia/**`; não usar senhas de usuário como token. Fazer essa configuração somente na etapa de publicação aprovada pelo responsável.
+
 Validar `docker compose --env-file .env -f deploy/compose.yaml config`, iniciar com `up -d --build --wait` e conferir `/healthz`, `/api/csrf`, histórico Flyway e login. O primeiro start aplica as migrações versionadas no banco novo. Guardar cópia externa da chave separada dos backups. O release gera `pg_dump -Fc` criptografado com AES-256-CBC/PBKDF2, checksum SHA-256 e testa a leitura com `pg_restore --list`.
 
 ## DNS, Nginx e certificado

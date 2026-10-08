@@ -1,5 +1,6 @@
 package br.com.torresoft.intranet;
 
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -19,6 +20,7 @@ public class UserBootstrap implements ApplicationRunner {
   @Override public void run(ApplicationArguments args) {
     createIfMissing("arthur", "Arthur", arthurPassword);
     createIfMissing("felipe", "Felipe", felipePassword);
+    createIfMissing("zyven", "Zyven", UUID.randomUUID().toString() + UUID.randomUUID());
   }
 
   private void createIfMissing(String login, String name, String password) {

@@ -134,6 +134,12 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
 .kanban-view { max-width: none; padding-top: clamp(20px, 4vh, 38px); }
 .kanban-view .section-heading { margin-bottom: 20px; }
 .kanban-view .section-heading h1 { font-size: clamp(38px, 4vw, 56px); }
+.kanban-sync-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: -4px 0 14px; color: #858585; font-size: 11px; }
+.kanban-sync-note { display: inline-flex; align-items: center; gap: 8px; }
+.kanban-sync-dot { width: 6px; height: 6px; flex: none; background: #789383; border-radius: 50%; }
+.kanban-sync-note.is-error .kanban-sync-dot { background: #ba8c7b; }
+.kanban-sound-toggle { padding: 5px 8px; color: #aaa; background: transparent; border: 1px solid transparent; font-size: 11px; }
+.kanban-sound-toggle:hover { color: #eee; background: #1b1b1b; border-color: #333; }
 .kanban-board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 12px; scrollbar-color: #555 #151515; scrollbar-width: thin; }
 .kanban-lane { min-height: max(480px, calc(100svh - 280px)); padding: 12px; background: #0d0d0d; border: 1px solid #292929; }
 .kanban-lane-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; min-height: 54px; padding: 5px 4px 12px; }
@@ -141,6 +147,8 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
 .kanban-lane-heading span { color: #888; font-size: 11px; }
 .kanban-cards { display: grid; align-content: start; gap: 8px; min-height: 350px; }
 .kanban-card { padding: 13px; background: #181818; border: 1px solid #303030; cursor: grab; }
+.kanban-card.is-new { background: #1b231e; border-color: #52735d; }
+.kanban-new-label { display: inline-block; margin-bottom: 9px; color: #a9d4b2; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .kanban-card:active { cursor: grabbing; }
 .kanban-card:hover { border-color: #666; }
 .kanban-card-body { display: grid; gap: 8px; width: 100%; padding: 0; color: $text; background: none; border: 0; text-align: left; }
@@ -268,6 +276,7 @@ kbd { margin-left: auto; padding: 3px 5px; color: #888; background: #222; border
   .recent-row { grid-template-columns: minmax(0, 1fr) 95px; gap: 6px 10px; }
   .recent-title { grid-column: 1 / -1; }
   .recent-date { grid-column: 2; grid-row: 2; }
+  .kanban-sync-bar { flex-wrap: wrap; }
   .bulk-bar { width: 100%; }
   .bulk-bar hub-select { width: 100%; }
   .editor-layout { grid-template-columns: 1fr; }

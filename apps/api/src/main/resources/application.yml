@@ -31,6 +31,7 @@ management:
         include: health
 app:
   uploads-dir: ${UPLOADS_DIR:../../data/uploads}
+  ai-token: ${HUB_AI_TOKEN:}
   bootstrap:
     arthur-password: ${ARTHUR_INITIAL_PASSWORD:}
     felipe-password: ${FELIPE_INITIAL_PASSWORD:}
