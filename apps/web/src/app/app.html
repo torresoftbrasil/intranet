@@ -49,17 +49,18 @@
               @if (pendingImages().length) { <div class="pending-images" aria-label="Imagens prontas para anexar">@for (image of pendingImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removePendingImage(image.id)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div><p class="hint">As imagens serão anexadas ao salvar.</p> }
             </section>
             <aside class="comments-panel" aria-label="Comentários da demanda">
-              @if (current()?.iaResultado) { <section class="ai-result"><h2>Resultado da IA{{ current()?.iaEstado === 'AGUARDANDO_REVISAO' ? ' · aguardando sua revisão' : '' }}</h2><p>{{ current()!.iaResultado }}</p></section> }
+              @if (isArthur() && current()?.iaResultado) { <section class="ai-result"><h2>Resultado da IA{{ current()?.iaEstado === 'AGUARDANDO_REVISAO' ? ' · aguardando sua revisão' : '' }}</h2><p>{{ current()!.iaResultado }}</p></section> }
               <div class="comments-heading"><h2>Comentários</h2><button type="button" (click)="commentComposerOpen.update(open => !open)" aria-label="Adicionar comentário" [attr.aria-expanded]="commentComposerOpen()">+</button></div>
               @if (commentComposerOpen()) {
                 <div class="comment-composer">
                   <textarea [(ngModel)]="commentDraft" (paste)="pasteCommentImage($event, 'comment')" aria-label="Novo comentário" placeholder="Escreva ou cole um print..." maxlength="5000"></textarea>
+                  @if (isArthur()) { <label class="comment-visibility"><input type="checkbox" [(ngModel)]="commentRestricted"> Comentário interno · só Arthur</label> }
                   @if (commentImages().length) { <div class="comment-previews">@for (image of commentImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removeCommentImage(image.id, commentImages)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div> }
                   <div class="comment-compose-actions"><label class="comment-upload">Imagem<input type="file" accept="image/png,image/jpeg" multiple (change)="chooseCommentImages($event, 'comment')" hidden></label><button class="primary" (click)="submitComment()" [disabled]="busy()">Publicar</button></div>
                 </div>
               }
-              <div class="comments-list">@for (comment of comments(); track comment.id) {
-                <article class="comment-item"><div class="comment-meta"><strong>{{ comment.autor }}</strong><time [attr.datetime]="comment.criadoEm">{{ commentDate(comment.criadoEm) }}</time></div>
+              <div class="comments-list">@for (comment of visibleComments(); track comment.id) {
+                <article class="comment-item"><div class="comment-meta"><strong>{{ comment.autor }} @if (isArthur() && comment.visibilidade === 'SOMENTE_ARTHUR') { <span class="comment-private">· só Arthur</span> }</strong><time [attr.datetime]="comment.criadoEm">{{ commentDate(comment.criadoEm) }}</time></div>
                   @if (comment.texto) { <p class="comment-text">{{ comment.texto }}</p> }
                   @if (comment.imagens.length) { <div class="comment-images">@for (image of comment.imagens; track image.id) { <a [href]="image.url" target="_blank" rel="noopener noreferrer"><img [src]="image.url" [alt]="image.nome"></a> }</div> }
                 </article>
@@ -101,9 +102,9 @@
                 <section class="kanban-lane" (dragover)="allowDrop($event)" (drop)="dropDemand($event, lane.value)">
                   <div class="kanban-lane-heading"><h2>{{ lane.label }}</h2><span>{{ laneDemands(lane.value).length }}</span></div>
                   <div class="kanban-cards">@for (demand of laneDemands(lane.value); track demand.id) {
-                    <article class="kanban-card" [class.is-new]="newKanbanIds().includes(demand.id)" [class.is-ai]="demand.destinadaIa" draggable="true" tabindex="0" (dragstart)="startDrag($event, demand)" (contextmenu)="openCardMenu($event, demand)">
+                    <article class="kanban-card" [class.is-new]="newKanbanIds().includes(demand.id)" [class.is-ai]="isArthur() && demand.destinadaIa" draggable="true" tabindex="0" (dragstart)="startDrag($event, demand)" (contextmenu)="openCardMenu($event, demand)">
                       @if (newKanbanIds().includes(demand.id)) { <span class="kanban-new-label">Nova</span> }
-                      @if (demand.destinadaIa) { <span class="kanban-ai-label">✦ IA{{ demand.iaEstado === 'AGUARDANDO_REVISAO' ? ' · revisar' : demand.iaEstado === 'EM_EXECUCAO' ? ' · em execução' : demand.iaEstado === 'CONCLUIDA' ? ' · entregue' : '' }}</span> }
+                      @if (isArthur() && demand.destinadaIa) { <span class="kanban-ai-label">✦ IA{{ demand.iaEstado === 'AGUARDANDO_REVISAO' ? ' · revisar' : demand.iaEstado === 'EM_EXECUCAO' ? ' · em execução' : demand.iaEstado === 'CONCLUIDA' ? ' · entregue' : '' }}</span> }
                       <button class="kanban-card-body" (click)="editExisting(demand)"><strong>{{ demand.titulo }}</strong><span>{{ plainText(demand.descricao) || 'Sem descrição' }}</span></button>
                       <div class="kanban-card-footer"><small>{{ demand.responsavel || 'Sem responsável' }}</small></div>
                     </article>
@@ -111,9 +112,9 @@
                 </section>
               }
             </div>
-            @if (me()?.login === 'arthur') { @if (cardMenu(); as menu) { <div #cardMenu class="card-context-menu" role="menu" [style.left.px]="menu.x" [style.top.px]="menu.y"><button type="button" role="menuitem" (click)="sendCardToAi()" [disabled]="menu.demand.destinadaIa || busy()">{{ menu.demand.destinadaIa ? 'Já destinada para IA' : '✦ Destinar para IA' }}</button></div> } }
+            @if (isArthur()) { @if (cardMenu(); as menu) { <div #cardMenu class="card-context-menu" role="menu" [style.left.px]="menu.x" [style.top.px]="menu.y"><button type="button" role="menuitem" (click)="sendCardToAi()" [disabled]="menu.demand.destinadaIa || busy()">{{ menu.demand.destinadaIa ? 'Já destinada para IA' : '✦ Destinar para IA' }}</button></div> } }
           } @else if (demands().length) { <div class="list-tools"><label><input type="checkbox" [checked]="selected().length === demands().length" (change)="toggleAll($any($event.target).checked)"> Selecionar todas</label><span>Atualizadas recentemente</span></div>
-            <div class="demand-grid">@for (demand of demands(); track demand.id) { <article class="demand-card glass-card" [class.is-selected]="selected().includes(demand.id)"><div class="card-top"><span class="card-id">DEMANDA #{{ demand.id }} @if (demand.destinadaIa) { <span class="kanban-ai-label">✦ IA</span> }</span><input type="checkbox" [attr.aria-label]="'Selecionar demanda ' + demand.id" [checked]="selected().includes(demand.id)" (change)="toggle(demand.id, $any($event.target).checked)"></div><button class="card-body" (click)="editExisting(demand)"><h3>{{ demand.titulo }}</h3><p>{{ plainText(demand.descricao) || 'Abra para adicionar mais detalhes à demanda.' }}</p></button><div class="card-bottom"><span class="status-pill" [attr.data-status]="demand.status">{{ statusLabel(demand.status) }}</span><span class="card-person"><span class="mini-avatar">{{ (demand.responsavel || '?').slice(0,1) }}</span>{{ demand.responsavel || 'Sem responsável' }}</span></div><div class="card-date">Atualizada em {{ demand.atualizadoEm | date:'dd/MM/yyyy' }}</div></article> }</div>
+            <div class="demand-grid">@for (demand of demands(); track demand.id) { <article class="demand-card glass-card" [class.is-selected]="selected().includes(demand.id)"><div class="card-top"><span class="card-id">DEMANDA #{{ demand.id }} @if (isArthur() && demand.destinadaIa) { <span class="kanban-ai-label">✦ IA</span> }</span><input type="checkbox" [attr.aria-label]="'Selecionar demanda ' + demand.id" [checked]="selected().includes(demand.id)" (change)="toggle(demand.id, $any($event.target).checked)"></div><button class="card-body" (click)="editExisting(demand)"><h3>{{ demand.titulo }}</h3><p>{{ plainText(demand.descricao) || 'Abra para adicionar mais detalhes à demanda.' }}</p></button><div class="card-bottom"><span class="status-pill" [attr.data-status]="demand.status">{{ statusLabel(demand.status) }}</span><span class="card-person"><span class="mini-avatar">{{ (demand.responsavel || '?').slice(0,1) }}</span>{{ demand.responsavel || 'Sem responsável' }}</span></div><div class="card-date">Atualizada em {{ demand.atualizadoEm | date:'dd/MM/yyyy' }}</div></article> }</div>
           } @else { <div class="empty glass-card"><h3>Nenhuma demanda por aqui ainda.</h3><p>Abra uma demanda no início ou ajuste os filtros.</p><button class="secondary" (click)="editNew()">Abrir demanda →</button></div> }
         </section>
         @if (selected().length) { <section class="bulk-bar glass-card" aria-label="Ações em lote"><strong>{{ selected().length }} selecionada(s)</strong><hub-select [(ngModel)]="bulkStatus" [options]="bulkStatusOptions" ariaLabel="Novo status" /><label class="bulk-check"><input type="checkbox" [(ngModel)]="bulkAssign"> Alterar responsável</label>@if (bulkAssign) { <hub-select [(ngModel)]="bulkPerson" [options]="personOptions()" ariaLabel="Novo responsável" /> }<button class="primary" (click)="applyBulk()" [disabled]="!bulkStatus && !bulkAssign">Aplicar ações</button></section> }
@@ -132,10 +133,11 @@
         <section class="test-dialog" role="dialog" aria-modal="true" aria-label="Enviar demanda para teste" (click)="$event.stopPropagation()">
           <div class="dialog-heading"><h2>Enviar para teste</h2><button (click)="closeTestModal()" [disabled]="busy()" aria-label="Fechar">×</button></div>
           <p class="dialog-demand">{{ testModal()!.titulo }}</p>
-          <label>Responsável<hub-select [(ngModel)]="testResponsible" [options]="personOptions()" ariaLabel="Responsável pelo teste" /></label>
-          <label>Comentário<textarea [(ngModel)]="testComment" (paste)="pasteCommentImage($event, 'test')" placeholder="Escreva ou cole um print..." maxlength="5000"></textarea></label>
+          @if (isAiReviewHandoff()) { <p>Responsável pelo teste: <strong>Felipe</strong></p> }
+          @else { <label>Responsável<hub-select [(ngModel)]="testResponsible" [options]="personOptions()" ariaLabel="Responsável pelo teste" /></label> }
+          <label>{{ testModal()?.destinadaIa ? 'Entrega para teste' : 'Comentário' }}<textarea [(ngModel)]="testComment" (paste)="pasteCommentImage($event, 'test')" [placeholder]="testModal()?.destinadaIa ? 'Em poucas palavras, diga o que foi entregue e o que Felipe precisa testar.' : 'Escreva ou cole um print...'" [attr.maxlength]="isAiReviewHandoff() ? 500 : testModal()?.destinadaIa ? 800 : 5000"></textarea></label>
           @if (testImages().length) { <div class="comment-previews">@for (image of testImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removeCommentImage(image.id, testImages)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div> }
-          <div class="dialog-actions"><label class="comment-upload">Imagem<input type="file" accept="image/png,image/jpeg" multiple (change)="chooseCommentImages($event, 'test')" hidden></label><button class="primary" (click)="submitTest()" [disabled]="busy()">Enviar para teste →</button></div>
+          <div class="dialog-actions">@if (!isAiReviewHandoff()) { <label class="comment-upload">Imagem<input type="file" accept="image/png,image/jpeg" multiple (change)="chooseCommentImages($event, 'test')" hidden></label> }<button class="primary" (click)="submitTest()" [disabled]="busy() || (testModal()?.destinadaIa && !testComment.trim())">Enviar para teste →</button></div>
           @if (error()) { <p class="dialog-error" role="alert">{{ error() }}</p> }
         </section>
       </div>

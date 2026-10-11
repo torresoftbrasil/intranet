@@ -41,29 +41,31 @@ public class CommentResource {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Demanda não encontrada");
   }
 
-  private Map<String,Object> comment(long demandId, long id) {
+  private Map<String,Object> comment(long demandId, long id, Principal principal) {
     var comments = jdbc.query("""
-      SELECT c.id, c.texto, u.nome AS autor, c.criado_em AS "criadoEm"
+      SELECT c.id, c.texto, c.visibilidade, u.nome AS autor, c.criado_em AS "criadoEm"
       FROM comentario c JOIN usuario u ON u.id = c.autor_id
-      WHERE c.demanda_id = ? AND c.id = ?
+      WHERE c.demanda_id = ? AND c.id = ? AND (? = 'arthur' OR c.visibilidade = 'GERAL')
       """, (rs, row) -> Map.<String,Object>of(
         "id", rs.getLong("id"), "texto", rs.getString("texto"), "autor", rs.getString("autor"),
+        "visibilidade", rs.getString("visibilidade"),
         "criadoEm", rs.getObject("criadoEm", OffsetDateTime.class).toString(),
         "imagens", jdbc.query("""
           SELECT id, nome FROM comentario_imagem WHERE comentario_id = ? ORDER BY id
           """, (image, imageRow) -> Map.<String,Object>of(
             "id", image.getLong("id"), "nome", image.getString("nome"),
             "url", "/api/demandas/" + demandId + "/comentarios/" + id + "/imagens/" + image.getLong("id")), id)
-      ), demandId, id);
+      ), demandId, id, principal.getName());
     return comments.stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
   }
 
-  @GetMapping List<Map<String,Object>> list(@PathVariable long demandaId) {
+  @GetMapping List<Map<String,Object>> list(@PathVariable long demandaId, Principal principal) {
     demandExists(demandaId);
     List<Long> ids = jdbc.queryForList("""
-      SELECT id FROM comentario WHERE demanda_id = ? ORDER BY criado_em DESC, id DESC
-      """, Long.class, demandaId);
-    return ids.stream().map(id -> comment(demandaId, id)).toList();
+      SELECT id FROM comentario WHERE demanda_id = ? AND (? = 'arthur' OR visibilidade = 'GERAL')
+      ORDER BY criado_em DESC, id DESC
+      """, Long.class, demandaId, principal.getName());
+    return ids.stream().map(id -> comment(demandaId, id, principal)).toList();
   }
 
   private record ImageData(String name, String type, byte[] bytes) {}
@@ -86,18 +88,28 @@ public class CommentResource {
   @ResponseStatus(HttpStatus.CREATED)
   @Transactional(rollbackFor = Exception.class)
   Map<String,Object> create(@PathVariable long demandaId, @RequestParam(required = false) String texto,
+      @RequestParam(required = false) String visibilidade,
       @RequestPart(value = "imagem", required = false) List<MultipartFile> imagens, Principal principal) throws IOException {
     demandExists(demandaId);
     String message = texto == null ? "" : texto.trim();
     List<MultipartFile> files = imagens == null ? List.of() : imagens;
     if (message.isEmpty() && files.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Escreva ou cole algo no comentário");
     if (message.length() > 5000 || files.size() > 5) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Comentário excede o limite");
+    boolean arthur = "arthur".equals(principal.getName());
+    boolean destinadaIa = Boolean.TRUE.equals(jdbc.queryForObject(
+      "SELECT destinada_ia FROM demanda WHERE id = ?", Boolean.class, demandaId));
+    String visibility = visibilidade == null || visibilidade.isBlank()
+      ? arthur && destinadaIa ? "SOMENTE_ARTHUR" : "GERAL" : visibilidade;
+    if (!visibility.equals("GERAL") && !visibility.equals("SOMENTE_ARTHUR"))
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Visibilidade inválida");
+    if (visibility.equals("SOMENTE_ARTHUR") && !arthur)
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente Arthur pode criar comentário interno");
     List<ImageData> validated = new ArrayList<>();
     for (MultipartFile file : files) validated.add(validate(file));
     Long id = jdbc.queryForObject("""
-      INSERT INTO comentario(demanda_id, autor_id, texto)
-      VALUES (?, (SELECT id FROM usuario WHERE login = ?), ?) RETURNING id
-      """, Long.class, demandaId, principal.getName(), message);
+      INSERT INTO comentario(demanda_id, autor_id, texto, visibilidade)
+      VALUES (?, (SELECT id FROM usuario WHERE login = ?), ?, ?) RETURNING id
+      """, Long.class, demandaId, principal.getName(), message, visibility);
     List<Path> written = new ArrayList<>();
     try {
       for (ImageData image : validated) {
@@ -109,7 +121,7 @@ public class CommentResource {
           INSERT INTO comentario_imagem(comentario_id, nome, tipo, tamanho, caminho) VALUES (?, ?, ?, ?, ?)
           """, id, image.name(), image.type(), image.bytes().length, name);
       }
-      return comment(demandaId, id);
+      return comment(demandaId, id, principal);
     } catch (Exception error) {
       for (Path path : written) Files.deleteIfExists(path);
       throw error;
@@ -118,13 +130,14 @@ public class CommentResource {
 
   @GetMapping("/{comentarioId}/imagens/{imagemId}")
   ResponseEntity<FileSystemResource> image(@PathVariable long demandaId, @PathVariable long comentarioId,
-      @PathVariable long imagemId) {
+      @PathVariable long imagemId, Principal principal) {
     var found = jdbc.query("""
       SELECT i.tipo, i.caminho FROM comentario_imagem i
       JOIN comentario c ON c.id = i.comentario_id
       WHERE i.id = ? AND i.comentario_id = ? AND c.demanda_id = ?
+        AND (? = 'arthur' OR c.visibilidade = 'GERAL')
       """, (rs, row) -> Map.<String,String>of("tipo", rs.getString("tipo"), "caminho", rs.getString("caminho")),
-      imagemId, comentarioId, demandaId).stream().findFirst()
+      imagemId, comentarioId, demandaId, principal.getName()).stream().findFirst()
       .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
     Path path = root.resolve(found.get("caminho")).normalize();
     if (!path.startsWith(root) || !Files.isRegularFile(path)) throw new ResponseStatusException(HttpStatus.NOT_FOUND);

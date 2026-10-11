@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.security.Principal;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -18,13 +19,14 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RestController
 public class DemandEvents {
   record Change(String kind, List<Long> ids, String actor) {}
+  record Listener(HttpSession session, String login) {}
 
-  private final Map<SseEmitter, HttpSession> listeners = new ConcurrentHashMap<>();
+  private final Map<SseEmitter, Listener> listeners = new ConcurrentHashMap<>();
 
   @GetMapping(path = "/api/demandas/eventos", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-  ResponseEntity<SseEmitter> listen(HttpSession session) {
+  ResponseEntity<SseEmitter> listen(HttpSession session, Principal principal) {
     SseEmitter emitter = new SseEmitter(0L);
-    listeners.put(emitter, session);
+    listeners.put(emitter, new Listener(session, principal.getName()));
     emitter.onCompletion(() -> listeners.remove(emitter));
     emitter.onTimeout(() -> listeners.remove(emitter));
     emitter.onError(error -> listeners.remove(emitter));
@@ -52,8 +54,10 @@ public class DemandEvents {
   private void broadcast(Change change) {
     for (var listener : listeners.entrySet()) {
       SseEmitter emitter = listener.getKey();
-      if (!sessionActive(listener.getValue())) { listeners.remove(emitter); emitter.complete(); continue; }
-      try { emitter.send(SseEmitter.event().name("demand").data(change)); }
+      if (!sessionActive(listener.getValue().session())) { listeners.remove(emitter); emitter.complete(); continue; }
+      Change visible = !"arthur".equals(listener.getValue().login()) && "zyven".equals(change.actor())
+        ? new Change(change.kind(), change.ids(), "arthur") : change;
+      try { emitter.send(SseEmitter.event().name("demand").data(visible)); }
       catch (IOException | IllegalStateException error) { listeners.remove(emitter); }
     }
   }
@@ -67,7 +71,7 @@ public class DemandEvents {
   void heartbeat() {
     for (var listener : listeners.entrySet()) {
       SseEmitter emitter = listener.getKey();
-      if (!sessionActive(listener.getValue())) { listeners.remove(emitter); emitter.complete(); continue; }
+      if (!sessionActive(listener.getValue().session())) { listeners.remove(emitter); emitter.complete(); continue; }
       try { emitter.send(SseEmitter.event().comment("keep-alive")); }
       catch (IOException | IllegalStateException error) { listeners.remove(emitter); }
     }

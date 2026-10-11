@@ -137,16 +137,27 @@ class DemandFlowTests {
     MvcResult felipe = mvc.perform(get("/api/demandas/eventos").with(user("felipe")))
       .andExpect(status().isOk()).andExpect(request().asyncStarted()).andReturn();
     try {
-      mvc.perform(post("/api/demandas").with(user("felipe")).with(csrf())
+      String created = mvc.perform(post("/api/demandas").with(user("felipe")).with(csrf())
         .contentType(MediaType.APPLICATION_JSON)
         .content("{\"titulo\":\"Nova pendência em tempo real\"}"))
-        .andExpect(status().isCreated());
+        .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
       for (MvcResult stream : new MvcResult[] {arthur, felipe}) {
         String body = stream.getResponse().getContentAsString();
         assertTrue(body.contains("event:demand"), body);
         assertTrue(body.contains("\"kind\":\"created\""), body);
         assertTrue(body.contains("\"actor\":\"felipe\""), body);
       }
+      var matcher = Pattern.compile("\"id\"\\s*:\\s*(\\d+)").matcher(created);
+      if (!matcher.find()) throw new AssertionError("Resposta sem id: " + created);
+      long id = Long.parseLong(matcher.group(1));
+      mvc.perform(post("/api/demandas/" + id + "/destinar-ia").with(user("arthur")).with(csrf()))
+        .andExpect(status().isOk());
+      mvc.perform(post("/api/ia/demandas/" + id + "/iniciar")
+        .header("Authorization", "Bearer test-hub-ai-token")).andExpect(status().isOk());
+      assertTrue(arthur.getResponse().getContentAsString().contains("\"actor\":\"zyven\""));
+      String felipeEvents = felipe.getResponse().getContentAsString();
+      assertTrue(!felipeEvents.contains("\"actor\":\"zyven\""), felipeEvents);
+      assertTrue(felipeEvents.contains("\"actor\":\"arthur\""), felipeEvents);
     } finally {
       arthur.getRequest().getAsyncContext().complete();
       felipe.getRequest().getAsyncContext().complete();
@@ -216,5 +227,100 @@ class DemandFlowTests {
       .contentType(MediaType.APPLICATION_JSON)
       .content("{\"ids\":[999999],\"status\":\"REABERTA\",\"alterarResponsavel\":false}"))
       .andExpect(status().isNotFound());
+  }
+
+  @Test @Transactional void felipeRecebeSomenteResumoHumanoEImagemInternaFicaProtegida() throws Exception {
+    String created = mvc.perform(post("/api/demandas").with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON).content("{\"titulo\":\"Melhoria da obra\"}"))
+      .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+    var matcher = Pattern.compile("\"id\"\\s*:\\s*(\\d+)").matcher(created);
+    if (!matcher.find()) throw new AssertionError("Resposta sem id: " + created);
+    long id = Long.parseLong(matcher.group(1));
+    mvc.perform(post("/api/demandas/" + id + "/destinar-ia").with(user("arthur")).with(csrf()))
+      .andExpect(status().isOk());
+    mvc.perform(get("/api/demandas/" + id).with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.destinadaIa").doesNotExist())
+      .andExpect(jsonPath("$.iaEstado").doesNotExist()).andExpect(jsonPath("$.iaResultado").doesNotExist())
+      .andExpect(jsonPath("$.responsavel").value("Arthur"));
+    mvc.perform(get("/api/demandas").with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$[0].destinadaIa").doesNotExist())
+      .andExpect(jsonPath("$[0].iaEstado").doesNotExist())
+      .andExpect(jsonPath("$[0].responsavel").value("Arthur"));
+    long arthurId = jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'arthur'", Long.class);
+    mvc.perform(get("/api/demandas").with(user("felipe")).param("responsavelId", Long.toString(arthurId)))
+      .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id))
+      .andExpect(jsonPath("$[0].responsavelId").value(arthurId));
+    long zyvenId = jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'zyven'", Long.class);
+    jdbc.update("INSERT INTO filtro(usuario_id, nome, responsavel_id) VALUES (?, 'Legado IA', ?)",
+      jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'felipe'", Long.class), zyvenId);
+    mvc.perform(get("/api/filtros").with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$[0].responsavelId").value(arthurId));
+    mvc.perform(get("/api/usuarios").with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$[?(@.login == 'zyven')]").isEmpty());
+    mvc.perform(post("/api/ia/demandas/" + id + "/iniciar")
+      .header("Authorization", "Bearer test-hub-ai-token")).andExpect(status().isOk());
+    mvc.perform(post("/api/ia/demandas/" + id + "/comentarios")
+      .header("Authorization", "Bearer test-hub-ai-token").contentType(MediaType.APPLICATION_JSON)
+      .content("{\"texto\":\"Nota técnica sobre o código\"}"))
+      .andExpect(status().isOk());
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "png", bytes);
+    mvc.perform(multipart("/api/demandas/" + id + "/comentarios")
+      .file(new MockMultipartFile("imagem", "interno.png", "image/png", bytes.toByteArray()))
+      .param("texto", "Detalhe interno").param("visibilidade", "SOMENTE_ARTHUR")
+      .with(user("arthur")).with(csrf()))
+      .andExpect(status().isCreated()).andExpect(jsonPath("$.visibilidade").value("SOMENTE_ARTHUR"));
+    long imageId = jdbc.queryForObject("SELECT i.id FROM comentario_imagem i JOIN comentario c ON c.id = i.comentario_id WHERE c.demanda_id = ?", Long.class, id);
+    long commentId = jdbc.queryForObject("SELECT c.id FROM comentario c JOIN comentario_imagem i ON i.comentario_id = c.id WHERE c.demanda_id = ?", Long.class, id);
+    mvc.perform(get("/api/demandas/" + id + "/comentarios/" + commentId + "/imagens/" + imageId)
+      .with(user("felipe"))).andExpect(status().isNotFound());
+    mvc.perform(get("/api/demandas/" + id + "/comentarios/" + commentId + "/imagens/" + imageId)
+      .with(user("arthur"))).andExpect(status().isOk());
+    mvc.perform(get("/api/demandas/" + id + "/comentarios").with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+    mvc.perform(get("/api/demandas/" + id + "/comentarios").with(user("arthur")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
+      .andExpect(jsonPath("$[0].visibilidade").value("SOMENTE_ARTHUR"));
+    mvc.perform(post("/api/ia/demandas/" + id + "/resultado")
+      .header("Authorization", "Bearer test-hub-ai-token").contentType(MediaType.APPLICATION_JSON)
+      .content("{\"relatorio\":\"Implementação interna detalhada\"}"))
+      .andExpect(status().isOk());
+    mvc.perform(put("/api/demandas/" + id).with(user("felipe")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"titulo\":\"Melhoria da obra\",\"status\":\"EM_TESTE\"}"))
+      .andExpect(status().isConflict());
+    mvc.perform(post("/api/demandas/lote").with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"ids\":[" + id + "],\"status\":\"EM_TESTE\",\"alterarResponsavel\":false}"))
+      .andExpect(status().isConflict());
+    mvc.perform(get("/api/demandas/" + id).with(user("arthur")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.iaEstado").value("AGUARDANDO_REVISAO"))
+      .andExpect(jsonPath("$.status").value("DESENVOLVIMENTO_EM_PROGRESSO"));
+    mvc.perform(post("/api/demandas/" + id + "/enviar-teste")
+      .with(user("felipe")).with(csrf())).andExpect(status().isForbidden());
+    mvc.perform(post("/api/demandas/" + id + "/enviar-teste")
+      .with(user("arthur")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+      .content("{\"resumoTeste\":\"A melhoria está pronta. Confira o fluxo na aplicação.\"}"))
+      .andExpect(status().isOk());
+    mvc.perform(post("/api/ia/demandas/" + id + "/enviar-teste")
+      .header("Authorization", "Bearer test-hub-ai-token"))
+      .andExpect(status().isOk());
+    mvc.perform(get("/api/demandas/" + id + "/comentarios").with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+      .andExpect(jsonPath("$[0].autor").value("Arthur"))
+      .andExpect(jsonPath("$[0].visibilidade").value("GERAL"))
+      .andExpect(jsonPath("$[0].texto").value("A melhoria está pronta. Confira o fluxo na aplicação."));
+    mvc.perform(get("/api/demandas/" + id).with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.iaResultado").doesNotExist());
+    String felipeCreated = mvc.perform(post("/api/demandas").with(user("felipe")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON).content("{\"titulo\":\"Pedido do Felipe\"}"))
+      .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+    var felipeMatcher = Pattern.compile("\"id\"\\s*:\\s*(\\d+)").matcher(felipeCreated);
+    if (!felipeMatcher.find()) throw new AssertionError("Resposta sem id: " + felipeCreated);
+    long felipeDemandId = Long.parseLong(felipeMatcher.group(1));
+    mvc.perform(post("/api/demandas/" + felipeDemandId + "/destinar-ia")
+      .with(user("arthur")).with(csrf())).andExpect(status().isOk());
+    mvc.perform(get("/api/demandas/recentes").with(user("felipe")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$[0].responsavel").value("Arthur"));
   }
 }

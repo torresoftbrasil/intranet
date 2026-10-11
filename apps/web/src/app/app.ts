@@ -9,12 +9,12 @@ import { HubOption, HubSelect } from './hub-select';
 
 type Status = 'AGUARDANDO_DESENVOLVIMENTO' | 'EM_DESENVOLVIMENTO' | 'DESENVOLVIMENTO_EM_PROGRESSO' | 'EM_TESTE' | 'REABERTA' | 'ENCERRADA';
 type Person = { id: number; login: string; nome: string };
-type Demand = { id: number; titulo: string; descricao?: string; status: Status; responsavelId: number | ''; responsavel: string; criadoEm: string; atualizadoEm: string; destinadaIa: boolean; iaEstado?: string; iaResultado?: string };
+type Demand = { id: number; titulo: string; descricao?: string; status: Status; responsavelId: number | ''; responsavel: string; criadoEm: string; atualizadoEm: string; destinadaIa?: boolean; iaEstado?: string; iaResultado?: string };
 type RecentDemand = Pick<Demand, 'id' | 'titulo' | 'responsavel' | 'criadoEm'>;
 type Attachment = { id: number; nome: string; tipo: string; tamanho: number };
 type PendingImage = { id: number; file: File; previewUrl: string };
 type SavedFilter = { id: number; nome: string; texto: string | null; status: Status | null; responsavelId: number | null };
-type Comment = { id: number; texto: string; autor: string; criadoEm: string; imagens: {id: number; nome: string; url: string}[] };
+type Comment = { id: number; texto: string; autor: string; criadoEm: string; visibilidade?: 'GERAL' | 'SOMENTE_ARTHUR'; imagens: {id: number; nome: string; url: string}[] };
 type DemandChange = { kind: 'created' | 'updated'; ids: number[]; actor: string };
 const openStatuses: {value: Status; label: string}[] = [
   {value: 'AGUARDANDO_DESENVOLVIMENTO', label: 'Aguardando desenvolvimento'},
@@ -42,6 +42,7 @@ export class App implements OnDestroy {
   kanbanStatusOptions: HubOption[] = [{value: '', label: 'Todos os status'}, ...openStatuses];
   bulkStatusOptions: HubOption[] = [{value: '', label: 'Manter status'}, ...statuses];
   me = signal<Person | null>(null);
+  isArthur = computed(() => this.me()?.login === 'arthur');
   page = signal<'inicio' | 'demandas' | 'painel'>('inicio');
   demands = signal<Demand[]>([]);
   recentDemands = signal<RecentDemand[]>([]);
@@ -52,10 +53,12 @@ export class App implements OnDestroy {
   attachments = signal<Attachment[]>([]);
   pendingImages = signal<PendingImage[]>([]);
   comments = signal<Comment[]>([]);
+  visibleComments = computed(() => this.isArthur() ? this.comments() : this.comments().filter(comment => comment.visibilidade === 'GERAL'));
   commentImages = signal<PendingImage[]>([]);
   testImages = signal<PendingImage[]>([]);
   commentComposerOpen = signal(false);
   testModal = signal<Demand | null>(null);
+  isAiReviewHandoff = computed(() => this.testModal()?.destinadaIa && this.testModal()?.iaEstado === 'AGUARDANDO_REVISAO');
   cardMenu = signal<{demand: Demand; x: number; y: number} | null>(null);
   listMode = signal<'cards' | 'kanban'>('cards');
   newKanbanIds = signal<number[]>([]);
@@ -95,6 +98,7 @@ export class App implements OnDestroy {
   status: Status = 'AGUARDANDO_DESENVOLVIMENTO';
   responsible = '';
   commentDraft = '';
+  commentRestricted = false;
   testComment = '';
   testResponsible = '';
   private testMoved = false;
@@ -353,6 +357,7 @@ export class App implements OnDestroy {
       this.clearPendingImages();
       const full = await firstValueFrom(this.http.get<Demand>(`/api/demandas/${demand.id}`));
       this.current.set(full); this.title = full.titulo; this.description = full.descricao ?? '';
+      this.commentRestricted = this.isArthur() && !!full.destinadaIa;
       this.status = full.status; this.responsible = full.responsavelId ? String(full.responsavelId) : '';
       const [attachments, comments] = await Promise.all([
         firstValueFrom(this.http.get<Attachment[]>(`/api/demandas/${demand.id}/anexos`)),
@@ -575,7 +580,7 @@ export class App implements OnDestroy {
   closeEditor() {
     const wasEditing = this.editing();
     if (this.editing()) this.clearPendingImages();
-    this.clearImageList(this.commentImages); this.commentDraft = ''; this.commentComposerOpen.set(false);
+    this.clearImageList(this.commentImages); this.commentDraft = ''; this.commentRestricted = false; this.commentComposerOpen.set(false);
     this.editing.set(false); this.current.set(null); this.comments.set([]);
     if (wasEditing && this.isKanbanVisible()) void this.searchDemands();
   }
@@ -653,6 +658,7 @@ export class App implements OnDestroy {
   }
 
   pasteCommentImage(event: ClipboardEvent, target: 'comment' | 'test') {
+    if (target === 'test' && this.isAiReviewHandoff()) return;
     const files = Array.from(event.clipboardData?.items ?? [])
       .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
       .map(item => item.getAsFile()).filter((file): file is File => !!file);
@@ -670,13 +676,15 @@ export class App implements OnDestroy {
 
   chooseCommentImages(event: Event, target: 'comment' | 'test') {
     const input = event.target as HTMLInputElement;
+    if (target === 'test' && this.isAiReviewHandoff()) { input.value = ''; return; }
     this.addImageList(Array.from(input.files ?? []), target === 'comment' ? this.commentImages : this.testImages);
     input.value = '';
   }
 
-  private async postComment(demandId: number, message: string, images: PendingImage[]) {
+  private async postComment(demandId: number, message: string, images: PendingImage[], visibility: 'GERAL' | 'SOMENTE_ARTHUR') {
     const form = new FormData();
     form.append('texto', message.trim());
+    form.append('visibilidade', visibility);
     for (const image of images) form.append('imagem', image.file, image.file.name);
     await firstValueFrom(this.http.post<Comment>(`/api/demandas/${demandId}/comentarios`, form));
   }
@@ -691,14 +699,17 @@ export class App implements OnDestroy {
     if (!this.commentDraft.trim() && !this.commentImages().length) { this.error.set('Escreva um comentário ou cole uma imagem.'); return; }
     this.busy.set(true); this.error.set('');
     try {
-      await this.postComment(current.id, this.commentDraft, this.commentImages());
+      await this.postComment(current.id, this.commentDraft, this.commentImages(), this.isArthur() && this.commentRestricted ? 'SOMENTE_ARTHUR' : 'GERAL');
       this.clearImageList(this.commentImages); this.commentDraft = ''; this.commentComposerOpen.set(false);
       await this.loadComments(current.id);
     } catch (e) { this.error.set(this.errorText(e)); }
     finally { this.busy.set(false); }
   }
 
-  laneDemands(status: Status) { return this.demands().filter(item => item.status === status).sort((a, b) => Number(a.destinadaIa) - Number(b.destinadaIa)); }
+  laneDemands(status: Status) {
+    const demands = this.demands().filter(item => item.status === status);
+    return this.isArthur() ? demands.sort((a, b) => Number(a.destinadaIa) - Number(b.destinadaIa)) : demands;
+  }
 
   openCardMenu(event: MouseEvent, demand: Demand) {
     if (this.me()?.login !== 'arthur') return;
@@ -764,8 +775,20 @@ export class App implements OnDestroy {
   async submitTest() {
     const demand = this.testModal();
     if (!demand || this.busy()) return;
+    if (demand.destinadaIa && !this.testComment.trim()) {
+      this.error.set('Resuma o que foi entregue e o que Felipe deve testar.');
+      return;
+    }
     this.busy.set(true); this.error.set('');
     try {
+      if (this.isAiReviewHandoff()) {
+        await firstValueFrom(this.http.post<Demand>(`/api/demandas/${demand.id}/enviar-teste`,
+          {resumoTeste: this.testComment.trim()}));
+        await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
+        this.closeTestModal();
+        this.notice.set('Demanda enviada para teste.');
+        return;
+      }
       if (!this.testMoved) {
         await firstValueFrom(this.http.put<Demand>(`/api/demandas/${demand.id}`, {
           titulo: demand.titulo, descricao: demand.descricao ?? '', status: 'EM_TESTE',
@@ -776,7 +799,7 @@ export class App implements OnDestroy {
         await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
       }
       if (this.testComment.trim() || this.testImages().length)
-        await this.postComment(demand.id, this.testComment, this.testImages());
+        await this.postComment(demand.id, this.testComment, this.testImages(), 'GERAL');
       this.closeTestModal();
       this.notice.set('Demanda enviada para teste.');
     } catch (e) { this.error.set(this.errorText(e)); }

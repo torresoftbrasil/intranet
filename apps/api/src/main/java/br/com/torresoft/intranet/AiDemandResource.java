@@ -26,15 +26,19 @@ public class AiDemandResource {
   private final JdbcTemplate jdbc;
   private final Path uploads;
   private final DemandEvents events;
+  private final AiHandoffService handoff;
 
-  AiDemandResource(JdbcTemplate jdbc, DemandEvents events, @Value("${app.uploads-dir}") String uploadsDir) {
+  AiDemandResource(JdbcTemplate jdbc, DemandEvents events, AiHandoffService handoff,
+      @Value("${app.uploads-dir}") String uploadsDir) {
     this.jdbc = jdbc;
     this.events = events;
+    this.handoff = handoff;
     this.uploads = Path.of(uploadsDir).toAbsolutePath().normalize();
   }
 
   record ResultInput(@NotBlank @Size(max = 20000) String relatorio) {}
   record CommentInput(@NotBlank @Size(max = 5000) String texto) {}
+  record SendTestInput(@Size(max = 500) String resumoTeste) {}
 
   private Map<String,Object> demand(long id) {
     return jdbc.query("""
@@ -141,8 +145,8 @@ public class AiDemandResource {
   @PostMapping("/{id}/comentarios") @Transactional
   Map<String,Object> comment(@PathVariable long id, @Valid @RequestBody CommentInput input) {
     List<Long> created = jdbc.queryForList("""
-      INSERT INTO comentario(demanda_id, autor_id, texto)
-      SELECT d.id, u.id, ? FROM demanda d JOIN usuario u ON u.login = 'zyven' AND u.ativo
+      INSERT INTO comentario(demanda_id, autor_id, texto, visibilidade)
+      SELECT d.id, u.id, ?, 'SOMENTE_ARTHUR' FROM demanda d JOIN usuario u ON u.login = 'zyven' AND u.ativo
       WHERE d.id = ? AND d.destinada_ia AND d.ia_estado IN ('EM_EXECUCAO', 'AGUARDANDO_REVISAO')
       RETURNING id
       """, Long.class, input.texto().trim(), id);
@@ -163,17 +167,9 @@ public class AiDemandResource {
     return demand(id);
   }
 
-  @PostMapping("/{id}/enviar-teste") @Transactional
-  Map<String,Object> sendToTest(@PathVariable long id) {
-    Long felipeId = jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'felipe' AND ativo", Long.class);
-    int changed = jdbc.update("""
-      UPDATE demanda SET ia_estado = 'CONCLUIDA', status = 'EM_TESTE',
-        responsavel_id = ?,
-        atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1
-      WHERE id = ? AND destinada_ia AND ia_estado = 'AGUARDANDO_REVISAO'
-      """, felipeId, id);
-    if (changed == 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "Demanda não está aguardando revisão da IA");
-    events.publishAfterCommit("updated", List.of(id), "zyven");
+  @PostMapping("/{id}/enviar-teste")
+  Map<String,Object> sendToTest(@PathVariable long id, @Valid @RequestBody(required = false) SendTestInput input) {
+    handoff.sendToTest(id, input == null ? null : input.resumoTeste(), "zyven");
     return demand(id);
   }
 

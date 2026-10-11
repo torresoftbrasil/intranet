@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.security.Principal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,13 +24,15 @@ public class DemandResource {
   private final JdbcTemplate jdbc;
   private final NamedParameterJdbcTemplate named;
   private final DemandEvents events;
-  DemandResource(JdbcTemplate jdbc, NamedParameterJdbcTemplate named, DemandEvents events) {
-    this.jdbc = jdbc; this.named = named; this.events = events;
+  private final AiHandoffService handoff;
+  DemandResource(JdbcTemplate jdbc, NamedParameterJdbcTemplate named, DemandEvents events, AiHandoffService handoff) {
+    this.jdbc = jdbc; this.named = named; this.events = events; this.handoff = handoff;
   }
 
   record DemandInput(@NotBlank @Size(max=180) String titulo, String descricao, String status, Long responsavelId, Boolean destinadaIa) {}
   record BulkInput(@NotEmpty List<Long> ids, String status, Long responsavelId, boolean alterarResponsavel) {}
   record FilterInput(@NotBlank @Size(max=80) String nome, String texto, String status, Long responsavelId) {}
+  record SendTestInput(@Size(max=500) String resumoTeste) {}
 
   private long userId(Principal principal) {
     return jdbc.queryForObject("SELECT id FROM usuario WHERE login = ?", Long.class, principal.getName());
@@ -60,13 +63,27 @@ public class DemandResource {
       .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Demanda não encontrada"));
   }
 
-  @GetMapping("/usuarios") List<Map<String,Object>> users() {
-    return jdbc.queryForList("SELECT id, login, nome FROM usuario WHERE ativo ORDER BY nome");
+  private Map<String,Object> visibleDemand(Map<String,Object> raw, Principal principal) {
+    if ("arthur".equals(principal.getName())) return raw;
+    Map<String,Object> visible = new LinkedHashMap<>(raw);
+    visible.remove("destinadaIa");
+    visible.remove("iaEstado");
+    visible.remove("iaResultado");
+    if ("Zyven".equals(visible.get("responsavel"))) {
+      visible.put("responsavelId", jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'arthur'", Long.class));
+      visible.put("responsavel", "Arthur");
+    }
+    return visible;
+  }
+
+  @GetMapping("/usuarios") List<Map<String,Object>> users(Principal principal) {
+    return jdbc.queryForList("SELECT id, login, nome FROM usuario WHERE ativo AND (? = 'arthur' OR login <> 'zyven') ORDER BY nome",
+      principal.getName());
   }
 
   @GetMapping("/demandas") List<Map<String,Object>> list(@RequestParam(required=false) String texto,
       @RequestParam(required=false) String status, @RequestParam(required=false) Long responsavelId,
-      @RequestParam(defaultValue="false") boolean abertas) {
+      @RequestParam(defaultValue="false") boolean abertas, Principal principal) {
     if (status != null && !status.isBlank()) status(status);
     StringBuilder sql = new StringBuilder("""
       SELECT d.id, d.titulo, d.descricao, d.status, d.responsavel_id AS "responsavelId", u.nome AS responsavel,
@@ -77,22 +94,33 @@ public class DemandResource {
     MapSqlParameterSource params = new MapSqlParameterSource();
     if (texto != null && !texto.isBlank()) { sql.append(" AND (lower(d.titulo) LIKE :texto OR lower(d.descricao) LIKE :texto)"); params.addValue("texto", "%" + texto.toLowerCase().trim() + "%"); }
     if (status != null && !status.isBlank()) { sql.append(" AND d.status = :status"); params.addValue("status", status); }
-    if (responsavelId != null) { sql.append(" AND d.responsavel_id = :responsavel"); params.addValue("responsavel", responsavelId); }
+    if (responsavelId != null) {
+      Long arthurId = jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'arthur'", Long.class);
+      if (!"arthur".equals(principal.getName()) && responsavelId.equals(arthurId))
+        sql.append(" AND (d.responsavel_id = :responsavel OR u.login = 'zyven')");
+      else sql.append(" AND d.responsavel_id = :responsavel");
+      params.addValue("responsavel", responsavelId);
+    }
     if (abertas) sql.append(" AND d.status <> 'ENCERRADA'");
     sql.append(" ORDER BY d.atualizado_em DESC, d.id DESC LIMIT 500");
-    return named.queryForList(sql.toString(), params);
+    return named.queryForList(sql.toString(), params).stream()
+      .map(row -> visibleDemand(row, principal)).toList();
   }
 
   @GetMapping("/demandas/recentes") List<Map<String,Object>> recent(Principal principal) {
     return jdbc.queryForList("""
-      SELECT d.id, d.titulo, u.nome AS responsavel, d.criado_em AS "criadoEm"
+      SELECT d.id, d.titulo,
+        CASE WHEN ? <> 'arthur' AND u.login = 'zyven' THEN 'Arthur' ELSE u.nome END AS responsavel,
+        d.criado_em AS "criadoEm"
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id
       WHERE d.criado_por_id = ?
       ORDER BY d.criado_em DESC, d.id DESC LIMIT 10
-      """, userId(principal));
+      """, principal.getName(), userId(principal));
   }
 
-  @GetMapping("/demandas/{id}") Map<String,Object> one(@PathVariable long id) { return getDemand(id); }
+  @GetMapping("/demandas/{id}") Map<String,Object> one(@PathVariable long id, Principal principal) {
+    return visibleDemand(getDemand(id), principal);
+  }
 
   @PostMapping("/demandas") @ResponseStatus(HttpStatus.CREATED) @Transactional
   Map<String,Object> create(@Valid @RequestBody DemandInput input, Principal principal) {
@@ -106,7 +134,7 @@ public class DemandResource {
       """, Long.class, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), value,
       input.responsavelId(), userId(principal), false, null);
     events.publishAfterCommit("created", List.of(id), principal.getName());
-    return getDemand(id);
+    return visibleDemand(getDemand(id), principal);
   }
 
   @PutMapping("/demandas/{id}") @Transactional
@@ -117,6 +145,8 @@ public class DemandResource {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Use o menu do card para destinar à IA");
     responsible(input.responsavelId());
     String newStatus = status(input.status());
+    if (destined && "EM_TESTE".equals(newStatus) && !"CONCLUIDA".equals(existing.get("iaEstado")))
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Use Enviar para teste para concluir a revisão da IA");
     jdbc.update("""
       UPDATE demanda SET titulo = ?, descricao = ?, status = ?, responsavel_id = ?,
         encerrada_em = CASE WHEN ? = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END,
@@ -129,7 +159,7 @@ public class DemandResource {
       """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, input.responsavelId(), newStatus,
       destined, destined, destined, destined, destined, id);
     events.publishAfterCommit("updated", List.of(id), principal.getName());
-    return getDemand(id);
+    return visibleDemand(getDemand(id), principal);
   }
 
   @PostMapping("/demandas/{id}/destinar-ia") @Transactional
@@ -149,6 +179,15 @@ public class DemandResource {
     return getDemand(id);
   }
 
+  @PostMapping("/demandas/{id}/enviar-teste")
+  Map<String,Object> sendToTest(@PathVariable long id, @Valid @RequestBody(required = false) SendTestInput input,
+      Principal principal) {
+    if (!"arthur".equals(principal.getName()))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente Arthur pode enviar demandas da IA para teste");
+    handoff.sendToTest(id, input == null ? null : input.resumoTeste(), "arthur");
+    return getDemand(id);
+  }
+
   @PostMapping("/demandas/lote") @Transactional
   Map<String,Integer> bulk(@Valid @RequestBody BulkInput input, Principal principal) {
     if (input.ids().size() > 500 || input.ids().stream().anyMatch(id -> id == null || id < 1))
@@ -156,6 +195,14 @@ public class DemandResource {
     if (input.status() == null && !input.alterarResponsavel())
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Escolha uma alteração");
     if (input.status() != null) status(input.status());
+    if ("EM_TESTE".equals(input.status())) {
+      MapSqlParameterSource selected = new MapSqlParameterSource("ids", input.ids());
+      Long awaitingAi = named.queryForObject("""
+        SELECT count(*) FROM demanda WHERE id IN (:ids) AND destinada_ia AND ia_estado <> 'CONCLUIDA'
+        """, selected, Long.class);
+      if (awaitingAi != null && awaitingAi > 0)
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Use Enviar para teste para concluir a revisão da IA");
+    }
     if (input.alterarResponsavel()) responsible(input.responsavelId());
     MapSqlParameterSource params = new MapSqlParameterSource().addValue("ids", input.ids()).addValue("status", input.status()).addValue("responsavel", input.responsavelId());
     Integer count = named.queryForObject("SELECT count(*) FROM demanda WHERE id IN (:ids)", params, Integer.class);
@@ -168,7 +215,12 @@ public class DemandResource {
   }
 
   @GetMapping("/filtros") List<Map<String,Object>> filters(Principal principal) {
-    return jdbc.queryForList("SELECT id, nome, texto, status, responsavel_id AS \"responsavelId\" FROM filtro WHERE usuario_id = ? ORDER BY nome", userId(principal));
+    return jdbc.queryForList("""
+      SELECT id, nome, texto, status,
+        CASE WHEN ? <> 'arthur' AND responsavel_id = (SELECT id FROM usuario WHERE login = 'zyven')
+          THEN (SELECT id FROM usuario WHERE login = 'arthur') ELSE responsavel_id END AS "responsavelId"
+      FROM filtro WHERE usuario_id = ? ORDER BY nome
+      """, principal.getName(), userId(principal));
   }
 
   @PostMapping("/filtros") @ResponseStatus(HttpStatus.CREATED)
