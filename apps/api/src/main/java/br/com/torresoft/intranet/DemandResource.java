@@ -25,8 +25,9 @@ public class DemandResource {
   private final NamedParameterJdbcTemplate named;
   private final DemandEvents events;
   private final AiHandoffService handoff;
-  DemandResource(JdbcTemplate jdbc, NamedParameterJdbcTemplate named, DemandEvents events, AiHandoffService handoff) {
-    this.jdbc = jdbc; this.named = named; this.events = events; this.handoff = handoff;
+  private final DemandReopenService reopenService;
+  DemandResource(JdbcTemplate jdbc, NamedParameterJdbcTemplate named, DemandEvents events, AiHandoffService handoff, DemandReopenService reopenService) {
+    this.jdbc = jdbc; this.named = named; this.events = events; this.handoff = handoff; this.reopenService = reopenService;
   }
 
   record DemandInput(@NotBlank @Size(max=180) String titulo, String descricao, String status, Long responsavelId, Boolean destinadaIa) {}
@@ -50,7 +51,7 @@ public class DemandResource {
     return jdbc.query("""
       SELECT d.id, d.titulo, d.descricao, d.status, d.responsavel_id AS "responsavelId",
         u.nome AS responsavel, d.criado_em AS "criadoEm", d.atualizado_em AS "atualizadoEm", d.versao,
-        d.destinada_ia AS "destinadaIa", d.ia_estado AS "iaEstado", d.ia_resultado AS "iaResultado"
+        d.destinada_ia AS "destinadaIa", d.ia_estado AS "iaEstado", d.ia_resultado AS "iaResultado", d.reaberta
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id WHERE d.id = ?
       """, (rs, row) -> Map.<String,Object>ofEntries(
         Map.entry("id", rs.getLong("id")), Map.entry("titulo", rs.getString("titulo")), Map.entry("descricao", rs.getString("descricao")),
@@ -58,7 +59,7 @@ public class DemandResource {
         Map.entry("responsavel", rs.getString("responsavel") == null ? "" : rs.getString("responsavel")),
         Map.entry("criadoEm", rs.getObject("criadoEm", OffsetDateTime.class).toString()),
         Map.entry("atualizadoEm", rs.getObject("atualizadoEm", OffsetDateTime.class).toString()), Map.entry("versao", rs.getLong("versao")),
-        Map.entry("destinadaIa", rs.getBoolean("destinadaIa")), Map.entry("iaEstado", rs.getString("iaEstado") == null ? "" : rs.getString("iaEstado")),
+        Map.entry("destinadaIa", rs.getBoolean("destinadaIa")), Map.entry("reaberta", rs.getBoolean("reaberta")), Map.entry("iaEstado", rs.getString("iaEstado") == null ? "" : rs.getString("iaEstado")),
         Map.entry("iaResultado", rs.getString("iaResultado") == null ? "" : rs.getString("iaResultado"))), id)
       .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Demanda não encontrada"));
   }
@@ -88,7 +89,7 @@ public class DemandResource {
     StringBuilder sql = new StringBuilder("""
       SELECT d.id, d.titulo, d.descricao, d.status, d.responsavel_id AS "responsavelId", u.nome AS responsavel,
         d.criado_em AS "criadoEm", d.atualizado_em AS "atualizadoEm",
-        d.destinada_ia AS "destinadaIa", d.ia_estado AS "iaEstado"
+        d.destinada_ia AS "destinadaIa", d.ia_estado AS "iaEstado", d.reaberta
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id WHERE 1=1
       """);
     MapSqlParameterSource params = new MapSqlParameterSource();
@@ -185,6 +186,14 @@ public class DemandResource {
     if (!"arthur".equals(principal.getName()))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente Arthur pode enviar demandas da IA para teste");
     handoff.sendToTest(id, input == null ? null : input.resumoTeste(), "arthur");
+    return getDemand(id);
+  }
+
+  @PostMapping("/demandas/{id}/reabrir")
+  Map<String,Object> reopen(@PathVariable long id, Principal principal) {
+    if (!"arthur".equals(principal.getName()))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente Arthur pode reabrir demandas em teste");
+    reopenService.reopen(id, principal.getName());
     return getDemand(id);
   }
 

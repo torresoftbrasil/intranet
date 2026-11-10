@@ -9,7 +9,7 @@ import { HubOption, HubSelect } from './hub-select';
 
 type Status = 'AGUARDANDO_DESENVOLVIMENTO' | 'EM_DESENVOLVIMENTO' | 'DESENVOLVIMENTO_EM_PROGRESSO' | 'EM_TESTE' | 'REABERTA' | 'ENCERRADA';
 type Person = { id: number; login: string; nome: string };
-type Demand = { id: number; titulo: string; descricao?: string; status: Status; responsavelId: number | ''; responsavel: string; criadoEm: string; atualizadoEm: string; destinadaIa?: boolean; iaEstado?: string; iaResultado?: string };
+type Demand = { id: number; titulo: string; descricao?: string; status: Status; responsavelId: number | ''; responsavel: string; criadoEm: string; atualizadoEm: string; destinadaIa?: boolean; iaEstado?: string; iaResultado?: string; reaberta?: boolean };
 type RecentDemand = Pick<Demand, 'id' | 'titulo' | 'responsavel' | 'criadoEm'>;
 type Attachment = { id: number; nome: string; tipo: string; tamanho: number };
 type PendingImage = { id: number; file: File; previewUrl: string };
@@ -727,6 +727,18 @@ export class App implements OnDestroy {
       await firstValueFrom(this.http.post<Demand>(`/api/demandas/${demand.id}/destinar-ia`, {}));
       await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
       this.notice.set('Demanda destinada para IA e atribuída a Zyven.');
+    } catch (e) { this.error.set(this.errorText(e)); }
+    finally { this.busy.set(false); }
+  }
+
+  async reopenDemand(demand: Demand | null) {
+    if (!demand || demand.status !== 'EM_TESTE' || !this.isArthur() || this.busy()) return;
+    this.cardMenu.set(null); this.busy.set(true); this.error.set('');
+    try {
+      const reopened = await firstValueFrom(this.http.post<Demand>(`/api/demandas/${demand.id}/reabrir`, {}));
+      if (this.current()?.id === demand.id) { this.current.set(reopened); this.status = reopened.status; this.responsible = String(reopened.responsavelId || ''); }
+      await Promise.all([this.searchDemands(), this.loadRecentDemands()]);
+      this.notice.set('Demanda reaberta e enviada para aguardando desenvolvimento.');
     } catch (e) { this.error.set(this.errorText(e)); }
     finally { this.busy.set(false); }
   }

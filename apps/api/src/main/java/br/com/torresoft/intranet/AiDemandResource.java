@@ -27,12 +27,14 @@ public class AiDemandResource {
   private final Path uploads;
   private final DemandEvents events;
   private final AiHandoffService handoff;
+  private final DemandReopenService reopenService;
 
-  AiDemandResource(JdbcTemplate jdbc, DemandEvents events, AiHandoffService handoff,
+  AiDemandResource(JdbcTemplate jdbc, DemandEvents events, AiHandoffService handoff, DemandReopenService reopenService,
       @Value("${app.uploads-dir}") String uploadsDir) {
     this.jdbc = jdbc;
     this.events = events;
     this.handoff = handoff;
+    this.reopenService = reopenService;
     this.uploads = Path.of(uploadsDir).toAbsolutePath().normalize();
   }
 
@@ -42,7 +44,7 @@ public class AiDemandResource {
 
   private Map<String,Object> demand(long id) {
     return jdbc.query("""
-      SELECT d.id, d.titulo, d.descricao, d.status, d.ia_estado, d.ia_resultado,
+      SELECT d.id, d.titulo, d.descricao, d.status, d.ia_estado, d.ia_resultado, d.reaberta,
         d.criado_em, d.atualizado_em, u.nome AS responsavel
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id
       WHERE d.id = ?
@@ -50,6 +52,7 @@ public class AiDemandResource {
         Map.entry("id", rs.getLong("id")), Map.entry("titulo", rs.getString("titulo")),
         Map.entry("descricao", rs.getString("descricao")), Map.entry("status", rs.getString("status")),
         Map.entry("iaEstado", rs.getString("ia_estado") == null ? "" : rs.getString("ia_estado")),
+        Map.entry("reaberta", rs.getBoolean("reaberta")),
         Map.entry("iaResultado", rs.getString("ia_resultado") == null ? "" : rs.getString("ia_resultado")),
         Map.entry("criadoEm", rs.getObject("criado_em", OffsetDateTime.class).toString()),
         Map.entry("atualizadoEm", rs.getObject("atualizado_em", OffsetDateTime.class).toString()),
@@ -91,13 +94,13 @@ public class AiDemandResource {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Paginação inválida");
     long total = jdbc.queryForObject("SELECT count(*) FROM demanda", Long.class);
     List<Map<String,Object>> items = jdbc.query("""
-      SELECT d.id, d.titulo, d.status, d.destinada_ia, d.ia_estado, d.ia_resultado,
+      SELECT d.id, d.titulo, d.status, d.destinada_ia, d.ia_estado, d.ia_resultado, d.reaberta,
         d.criado_em, d.atualizado_em, d.encerrada_em, u.nome AS responsavel
       FROM demanda d LEFT JOIN usuario u ON u.id = d.responsavel_id
       ORDER BY d.criado_em ASC, d.id ASC LIMIT ? OFFSET ?
       """, (rs, row) -> Map.<String,Object>ofEntries(
         Map.entry("id", rs.getLong("id")), Map.entry("titulo", rs.getString("titulo")),
-        Map.entry("status", rs.getString("status")), Map.entry("destinadaIa", rs.getBoolean("destinada_ia")),
+        Map.entry("status", rs.getString("status")), Map.entry("destinadaIa", rs.getBoolean("destinada_ia")), Map.entry("reaberta", rs.getBoolean("reaberta")),
         Map.entry("iaEstado", rs.getString("ia_estado") == null ? "" : rs.getString("ia_estado")),
         Map.entry("temResultadoIa", rs.getString("ia_resultado") != null),
         Map.entry("criadoEm", rs.getObject("criado_em", OffsetDateTime.class).toString()),
@@ -118,10 +121,16 @@ public class AiDemandResource {
 
   @GetMapping("/{id}") Map<String,Object> one(@PathVariable long id) { return demand(id); }
 
+  @PostMapping("/{id}/reabrir")
+  Map<String,Object> reopen(@PathVariable long id) {
+    reopenService.reopen(id, "arthur");
+    return demand(id);
+  }
+
   @PostMapping("/{id}/iniciar") @Transactional
   Map<String,Object> start(@PathVariable long id) {
     int changed = jdbc.update("""
-      UPDATE demanda SET ia_estado = 'EM_EXECUCAO', ia_reservada_em = CURRENT_TIMESTAMP,
+      UPDATE demanda SET ia_estado = 'EM_EXECUCAO', status = 'DESENVOLVIMENTO_EM_PROGRESSO', ia_reservada_em = CURRENT_TIMESTAMP,
         atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1
       WHERE id = ? AND destinada_ia AND ia_estado = 'PENDENTE' AND status <> 'ENCERRADA'
       """, id);
@@ -146,13 +155,13 @@ public class AiDemandResource {
   Map<String,Object> comment(@PathVariable long id, @Valid @RequestBody CommentInput input) {
     List<Long> created = jdbc.queryForList("""
       INSERT INTO comentario(demanda_id, autor_id, texto, visibilidade)
-      SELECT d.id, u.id, ?, 'SOMENTE_ARTHUR' FROM demanda d JOIN usuario u ON u.login = 'zyven' AND u.ativo
+      SELECT d.id, u.id, ?, 'SOMENTE_ARTHUR' FROM demanda d JOIN usuario u ON u.login = 'arthur' AND u.ativo
       WHERE d.id = ? AND d.destinada_ia AND d.ia_estado IN ('EM_EXECUCAO', 'AGUARDANDO_REVISAO')
       RETURNING id
       """, Long.class, input.texto().trim(), id);
     if (created.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Demanda não está em execução ou revisão pela IA");
     events.publishAfterCommit("updated", List.of(id), "zyven");
-    return Map.of("id", created.getFirst(), "demandaId", id, "autor", "Zyven", "texto", input.texto().trim());
+    return Map.of("id", created.getFirst(), "demandaId", id, "autor", "Arthur", "texto", input.texto().trim());
   }
 
   @PostMapping("/{id}/liberar") @Transactional

@@ -38,6 +38,26 @@ class DemandFlowTests {
   @Autowired MockMvc mvc;
   @Autowired JdbcTemplate jdbc;
 
+  @Test @Transactional void reabreDemandaEmTesteEPermiteNovoCiclo() throws Exception {
+    Long id = jdbc.queryForObject("""
+      INSERT INTO demanda(titulo, descricao, status, responsavel_id, criado_por_id, destinada_ia, ia_estado)
+      SELECT 'Ajuste de teste', '', 'EM_TESTE', f.id, a.id, TRUE, 'CONCLUIDA'
+      FROM usuario f CROSS JOIN usuario a WHERE f.login = 'felipe' AND a.login = 'arthur'
+      RETURNING id
+      """, Long.class);
+    mvc.perform(post("/api/demandas/" + id + "/reabrir").with(user("felipe")).with(csrf()))
+      .andExpect(status().isForbidden());
+    mvc.perform(post("/api/demandas/" + id + "/reabrir").with(user("arthur")).with(csrf()))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.reaberta").value(true))
+      .andExpect(jsonPath("$.status").value("AGUARDANDO_DESENVOLVIMENTO"))
+      .andExpect(jsonPath("$.iaEstado").value("PENDENTE"));
+    mvc.perform(post("/api/ia/demandas/" + id + "/reabrir")
+      .header("Authorization", "Bearer test-hub-ai-token")).andExpect(status().isConflict());
+    mvc.perform(post("/api/ia/demandas/" + id + "/iniciar")
+      .header("Authorization", "Bearer test-hub-ai-token"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DESENVOLVIMENTO_EM_PROGRESSO"));
+  }
+
   @Test @Transactional void filaIaIncluiContextoEEsperaRevisaoHumana() throws Exception {
     mvc.perform(get("/api/ia/demandas")).andExpect(status().isUnauthorized());
     mvc.perform(get("/api/ia/demandas").with(user("arthur"))).andExpect(status().isUnauthorized());
@@ -114,7 +134,7 @@ class DemandFlowTests {
     mvc.perform(post("/api/ia/demandas/" + id + "/comentarios")
       .header("Authorization", "Bearer test-hub-ai-token").contentType(MediaType.APPLICATION_JSON)
       .content("{\"texto\":\"Alterei o fluxo; testar o cadastro.\"}"))
-      .andExpect(status().isOk()).andExpect(jsonPath("$.autor").value("Zyven"));
+      .andExpect(status().isOk()).andExpect(jsonPath("$.autor").value("Arthur"));
     mvc.perform(get("/api/ia/demandas").header("Authorization", "Bearer test-hub-ai-token"))
       .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(secondId));
     mvc.perform(post("/api/ia/demandas/" + id + "/resultado")
