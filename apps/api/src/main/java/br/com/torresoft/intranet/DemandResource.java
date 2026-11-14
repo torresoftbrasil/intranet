@@ -150,6 +150,7 @@ public class DemandResource {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Use Enviar para teste para concluir a revisão da IA");
     jdbc.update("""
       UPDATE demanda SET titulo = ?, descricao = ?, status = ?, responsavel_id = ?,
+        reaberta = CASE WHEN ? IN ('EM_TESTE', 'ENCERRADA') THEN FALSE ELSE reaberta END,
         encerrada_em = CASE WHEN ? = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END,
         destinada_ia = ?,
         ia_estado = CASE WHEN ? THEN COALESCE(ia_estado, 'PENDENTE') ELSE NULL END,
@@ -157,7 +158,7 @@ public class DemandResource {
         ia_reservada_em = CASE WHEN ? = FALSE THEN NULL ELSE ia_reservada_em END,
         ia_concluida_em = CASE WHEN ? = FALSE THEN NULL ELSE ia_concluida_em END,
         atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1 WHERE id = ?
-      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, input.responsavelId(), newStatus,
+      """, input.titulo().trim(), input.descricao() == null ? "" : input.descricao(), newStatus, input.responsavelId(), newStatus, newStatus,
       destined, destined, destined, destined, destined, id);
     events.publishAfterCommit("updated", List.of(id), principal.getName());
     return visibleDemand(getDemand(id), principal);
@@ -216,7 +217,7 @@ public class DemandResource {
     MapSqlParameterSource params = new MapSqlParameterSource().addValue("ids", input.ids()).addValue("status", input.status()).addValue("responsavel", input.responsavelId());
     Integer count = named.queryForObject("SELECT count(*) FROM demanda WHERE id IN (:ids)", params, Integer.class);
     if (count == null || count != input.ids().stream().distinct().count()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Seleção contém demanda inexistente");
-    String set = (input.status() != null ? "status = :status, encerrada_em = CASE WHEN :status = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END, " : "")
+    String set = (input.status() != null ? "status = :status, reaberta = CASE WHEN :status IN ('EM_TESTE', 'ENCERRADA') THEN FALSE ELSE reaberta END, encerrada_em = CASE WHEN :status = 'ENCERRADA' THEN COALESCE(encerrada_em, CURRENT_TIMESTAMP) ELSE NULL END, " : "")
       + (input.alterarResponsavel() ? "responsavel_id = :responsavel, " : "") + "atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1";
     int updated = named.update("UPDATE demanda SET " + set + " WHERE id IN (:ids)", params);
     events.publishAfterCommit("updated", input.ids(), principal.getName());

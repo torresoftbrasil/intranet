@@ -17,7 +17,7 @@ class AiHandoffService {
   void sendToTest(long id, String suppliedSummary, String actor) {
     Long felipeId = jdbc.queryForObject("SELECT id FROM usuario WHERE login = 'felipe' AND ativo", Long.class);
     int changed = jdbc.update("""
-      UPDATE demanda SET ia_estado = 'CONCLUIDA', status = 'EM_TESTE',
+      UPDATE demanda SET ia_estado = 'CONCLUIDA', status = 'EM_TESTE', reaberta = FALSE,
         responsavel_id = ?, atualizado_em = CURRENT_TIMESTAMP, versao = versao + 1
       WHERE id = ? AND destinada_ia AND ia_estado = 'AGUARDANDO_REVISAO'
       """, felipeId, id);

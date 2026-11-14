@@ -93,7 +93,7 @@
         </section>
         </div>
       } @else if (page() === 'demandas') {
-        <section class="work-section list-view" [class.kanban-view]="listMode() === 'kanban'"><div class="section-heading"><div><button class="back-link" (click)="navigate('inicio')">← Início</button><h1>{{ listMode() === 'kanban' ? 'Pendências.' : 'Demandas.' }}</h1></div><div class="section-actions"><button class="ghost-button" (click)="editNew()">+ Nova demanda</button><button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">Filtros</button><button class="ghost-button" (click)="navigate('painel')">Painel →</button></div></div>
+        <section class="work-section list-view" [class.kanban-view]="listMode() === 'kanban'"><div class="section-heading"><div><button class="back-link" (click)="navigate('inicio')">← Início</button><h1>{{ listMode() === 'kanban' ? 'Pendências.' : 'Demandas.' }}</h1></div><div class="section-actions">@if (listMode() === 'kanban') { <button class="ghost-button" (click)="openNewDemandModal()">+ Nova pendência</button> } @else { <button class="ghost-button" (click)="editNew()">+ Nova demanda</button> }<button class="ghost-button" (click)="filtersOpen.update(open => !open)" [attr.aria-expanded]="filtersOpen()">Filtros</button><button class="ghost-button" (click)="navigate('painel')">Painel →</button></div></div>
           @if (filtersOpen()) { <ng-container *ngTemplateOutlet="filterControls"></ng-container> }
           @if (listMode() === 'kanban') {
             <div class="kanban-sync-bar"><span class="kanban-sync-note" [class.is-error]="kanbanSyncError()"><span class="kanban-sync-dot" aria-hidden="true"></span>{{ kanbanSyncError() ? 'Não foi possível atualizar. Nova tentativa em breve.' : demandEventsConnected() ? 'Ao vivo · conferência a cada ' + kanbanRefreshSeconds + ' s' : 'Reconectando · conferência a cada ' + kanbanRefreshSeconds + ' s' }}</span><button type="button" class="kanban-sound-toggle" (click)="toggleNotificationSound()" [attr.aria-pressed]="soundEnabled()">{{ soundEnabled() ? 'Som ligado' : 'Som desligado' }}</button></div>
@@ -129,6 +129,20 @@
         </section>
       }
     </main>
+    @if (newDemandModal()) {
+      <div class="dialog-backdrop" (click)="closeNewDemandModal()">
+        <section class="new-demand-dialog" role="dialog" aria-modal="true" aria-labelledby="new-demand-title" (click)="$event.stopPropagation()">
+          <div class="dialog-heading"><h2 id="new-demand-title">Nova pendência</h2><button type="button" (click)="closeNewDemandModal()" [disabled]="busy()" aria-label="Fechar">×</button></div>
+          <div class="prompt-shell"><div class="prompt-inner">
+            @if (quickTitleReady) { <input class="prompt-title" [(ngModel)]="quickTitle" (keydown.enter)="focusPrompt($event)" maxlength="180" aria-label="Título da demanda" placeholder="Título"> }
+            <textarea #promptInput [(ngModel)]="commandText" (keydown.enter)="onPromptEnter($event)" (paste)="pasteImages($event)" rows="2" [attr.aria-label]="quickTitleReady ? 'Descrição da nova pendência' : 'Título da nova pendência'" [placeholder]="quickTitleReady ? 'Descreva a pendência ou cole um print...' : 'Digite o título da pendência...'"></textarea>
+            @if (pendingImages().length) { <div class="pending-images" aria-label="Imagens prontas para anexar">@for (image of pendingImages(); track image.id) { <div class="pending-image"><img [src]="image.previewUrl" [alt]="image.file.name"><button type="button" (click)="removePendingImage(image.id)" [attr.aria-label]="'Remover imagem ' + image.file.name">×</button></div> }</div> }
+            <div class="prompt-toolbar"><span>{{ quickTitleReady ? 'Enter para salvar · Shift + Enter para nova linha' : 'Enter para incluir título' }}</span><div class="prompt-actions"><hub-select class="prompt-status" [(ngModel)]="quickStatus" [options]="quickStatusOptions" ariaLabel="Status da nova pendência" /><hub-select class="prompt-responsible" [(ngModel)]="quickResponsible" [options]="personOptions()" ariaLabel="Responsável da nova pendência" /><button class="primary" (click)="advancePrompt()" [disabled]="busy() || (!quickTitleReady && !commandText.trim())">{{ quickTitleReady ? 'Salvar pendência →' : 'Incluir título →' }}</button></div></div>
+          </div></div>
+          @if (error()) { <p class="dialog-error" role="alert">{{ error() }}</p> }
+        </section>
+      </div>
+    }
     @if (testModal()) {
       <div class="dialog-backdrop" (click)="busy() ? null : closeTestModal()">
         <section class="test-dialog" role="dialog" aria-modal="true" aria-label="Enviar demanda para teste" (click)="$event.stopPropagation()">

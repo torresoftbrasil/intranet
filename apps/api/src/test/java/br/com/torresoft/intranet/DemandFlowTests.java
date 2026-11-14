@@ -56,6 +56,34 @@ class DemandFlowTests {
     mvc.perform(post("/api/ia/demandas/" + id + "/iniciar")
       .header("Authorization", "Bearer test-hub-ai-token"))
       .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DESENVOLVIMENTO_EM_PROGRESSO"));
+    mvc.perform(post("/api/ia/demandas/" + id + "/resultado")
+      .header("Authorization", "Bearer test-hub-ai-token")
+      .contentType(MediaType.APPLICATION_JSON).content("{\"relatorio\":\"Correção concluída\"}"))
+      .andExpect(status().isOk());
+    mvc.perform(post("/api/demandas/" + id + "/enviar-teste")
+      .with(user("arthur")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+      .content("{\"resumoTeste\":\"Verifique o ajuste realizado.\"}"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("EM_TESTE"))
+      .andExpect(jsonPath("$.reaberta").value(false));
+  }
+
+  @Test @Transactional void limpaMarcadorReabertaNaEdicaoENaAlteracaoEmLote() throws Exception {
+    Long id = jdbc.queryForObject("""
+      INSERT INTO demanda(titulo, descricao, status, criado_por_id, reaberta)
+      SELECT 'Ajuste manual', '', 'EM_DESENVOLVIMENTO', id, TRUE
+      FROM usuario WHERE login = 'arthur' RETURNING id
+      """, Long.class);
+    mvc.perform(put("/api/demandas/" + id).with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"titulo\":\"Ajuste manual\",\"status\":\"EM_TESTE\"}"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.reaberta").value(false));
+    jdbc.update("UPDATE demanda SET reaberta = TRUE, status = 'EM_DESENVOLVIMENTO' WHERE id = ?", id);
+    mvc.perform(post("/api/demandas/lote").with(user("arthur")).with(csrf())
+      .contentType(MediaType.APPLICATION_JSON)
+      .content("{\"ids\":[" + id + "],\"status\":\"ENCERRADA\",\"alterarResponsavel\":false}"))
+      .andExpect(status().isOk());
+    mvc.perform(get("/api/demandas/" + id).with(user("arthur")))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.reaberta").value(false));
   }
 
   @Test @Transactional void filaIaIncluiContextoEEsperaRevisaoHumana() throws Exception {

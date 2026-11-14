@@ -43,7 +43,7 @@ export class App implements OnDestroy {
   bulkStatusOptions: HubOption[] = [{value: '', label: 'Manter status'}, ...statuses];
   me = signal<Person | null>(null);
   isArthur = computed(() => this.me()?.login === 'arthur');
-  page = signal<'inicio' | 'demandas' | 'painel'>('inicio');
+  page = signal<'inicio' | 'demandas' | 'painel'>('demandas');
   demands = signal<Demand[]>([]);
   recentDemands = signal<RecentDemand[]>([]);
   people = signal<Person[]>([]);
@@ -60,7 +60,8 @@ export class App implements OnDestroy {
   testModal = signal<Demand | null>(null);
   isAiReviewHandoff = computed(() => this.testModal()?.destinadaIa && this.testModal()?.iaEstado === 'AGUARDANDO_REVISAO');
   cardMenu = signal<{demand: Demand; x: number; y: number} | null>(null);
-  listMode = signal<'cards' | 'kanban'>('cards');
+  listMode = signal<'cards' | 'kanban'>('kanban');
+  newDemandModal = signal(false);
   newKanbanIds = signal<number[]>([]);
   newDemandIds = signal<number[]>([]);
   kanbanSyncError = signal(false);
@@ -132,6 +133,7 @@ export class App implements OnDestroy {
     finally { this.busy.set(false); }
   }
   async signOut() {
+    this.newDemandModal.set(false);
     this.disconnectDemandEvents();
     this.stopKanbanPolling();
     this.newDemandIds.set([]);
@@ -203,7 +205,7 @@ export class App implements OnDestroy {
   }
 
   private isKanbanVisible() {
-    return !!this.me() && this.page() === 'demandas' && this.listMode() === 'kanban' && !this.editing();
+    return !!this.me() && this.page() === 'demandas' && this.listMode() === 'kanban' && !this.editing() && !this.newDemandModal();
   }
 
   private scheduleKanbanPoll(delay = KANBAN_REFRESH_MS) {
@@ -389,6 +391,7 @@ export class App implements OnDestroy {
       this.paletteOpen.set(false); this.menuOpen.set(false);
       this.cardMenu.set(null);
       if (this.testModal() && !this.busy()) this.closeTestModal();
+      if (this.newDemandModal() && !this.busy()) this.closeNewDemandModal();
     }
   }
 
@@ -398,6 +401,7 @@ export class App implements OnDestroy {
       this.listMode.set('cards'); this.search = ''; this.filterStatus = ''; this.filterPerson = '';
     }
     this.page.set(page); this.closeEditor(); this.menuOpen.set(false); this.paletteOpen.set(false); this.cardMenu.set(null);
+    this.newDemandModal.set(false);
     if (!this.isKanbanVisible()) this.stopKanbanPolling();
     if (resetKanbanFilters) void this.searchDemands();
   }
@@ -482,6 +486,12 @@ export class App implements OnDestroy {
         this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
         this.quickResponsible = String(this.me()?.id ?? '');
         this.clearPendingImages();
+        if (this.newDemandModal()) {
+          this.newDemandModal.set(false);
+          this.hasKanbanBaseline = true;
+          this.kanbanPollingReady = true;
+          this.scheduleKanbanPoll();
+        }
       }
     } catch (e) { this.error.set(this.errorText(e)); }
     finally { this.busy.set(false); }
@@ -494,6 +504,26 @@ export class App implements OnDestroy {
     this.filterPerson = '';
     this.listMode.set('kanban');
     this.filtersOpen.set(false); this.navigate('demandas'); void this.searchDemands();
+  }
+
+  openNewDemandModal() {
+    this.error.set('');
+    this.quickTitle = ''; this.quickTitleReady = false; this.commandText = '';
+    this.quickSavedId = null; this.quickImageHtml = '';
+    this.quickStatus = 'AGUARDANDO_DESENVOLVIMENTO';
+    this.quickResponsible = String(this.me()?.id ?? '');
+    this.clearPendingImages();
+    this.newDemandModal.set(true);
+    setTimeout(() => this.promptInput?.nativeElement.focus());
+  }
+
+  closeNewDemandModal() {
+    if (this.busy()) return;
+    this.newDemandModal.set(false);
+    this.quickTitle = ''; this.quickTitleReady = false; this.commandText = '';
+    this.quickSavedId = null; this.quickImageHtml = '';
+    this.clearPendingImages();
+    void this.searchDemands();
   }
 
   showAll() {

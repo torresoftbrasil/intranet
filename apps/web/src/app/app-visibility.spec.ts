@@ -19,6 +19,39 @@ describe('visibilidade da execução interna', () => {
     iaEstado: 'CONCLUIDA', iaResultado: 'Detalhes técnicos internos'
   };
 
+  it('abre no Kanban e cadastra uma pendência no popup com dois Enters', async () => {
+    const {fixture, app} = setup('arthur');
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    expect(app.page()).toBe('demandas');
+    expect(app.listMode()).toBe('kanban');
+    expect(fixture.nativeElement.querySelector('.kanban-board')).not.toBeNull();
+
+    fixture.nativeElement.querySelector('.section-actions button').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.new-demand-dialog')).not.toBeNull();
+    app.commandText = 'Corrigir relatório';
+    app.onPromptEnter(new KeyboardEvent('keydown', {key: 'Enter'}));
+    fixture.detectChanges();
+    expect(app.quickTitle).toBe('Corrigir relatório');
+    expect(app.quickTitleReady).toBe(true);
+    expect(http.match(request => request.method === 'POST' && request.url === '/api/demandas')).toHaveLength(0);
+
+    app.commandText = 'Ajustar os totais';
+    app.onPromptEnter(new KeyboardEvent('keydown', {key: 'Enter'}));
+    const created = http.expectOne('/api/demandas');
+    expect(created.request.body).toMatchObject({titulo: 'Corrigir relatório', descricao: 'Ajustar os totais'});
+    created.flush({...demand, id: 12, titulo: 'Corrigir relatório', descricao: 'Ajustar os totais', status: 'AGUARDANDO_DESENVOLVIMENTO'});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    http.expectOne(request => request.method === 'GET' && request.url === '/api/demandas' && request.params.get('abertas') === 'true')
+      .flush([{...demand, id: 12, titulo: 'Corrigir relatório', status: 'AGUARDANDO_DESENVOLVIMENTO'}]);
+    http.expectOne('/api/demandas/recentes').flush([]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect(app.newDemandModal()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.kanban-card-body')?.textContent).toContain('Corrigir relatório');
+  });
+
   it('não mostra marcadores nem resultado da IA para Felipe', () => {
     const {fixture, app} = setup('felipe');
     app.page.set('demandas');
